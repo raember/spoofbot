@@ -1,5 +1,7 @@
+import mimetypes
 from enum import Enum
 from typing import List, Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -283,41 +285,50 @@ class Browser:
         """
         raise NotImplementedError
 
-    def _assemble_headers(self, custom_headers: dict = None) -> dict:
-        headers = self._get_default_headers()
+    def _assemble_headers(self, url: str, custom_headers: dict = None) -> dict:
+        headers = self._get_default_headers(url)
+        mimetype, enc = mimetypes.guess_type(url)
+        if mimetype is not None:
+            print(f"MimeType: {mimetype}")
+            print(f"Encoding: {enc}")
+            if not custom_headers:
+                custom_headers = {}
+            custom_headers.setdefault('Accept', mimetype)
+            if enc:
+                custom_headers.setdefault('Accept-Encoding', enc)
         if custom_headers:
             headers.update(custom_headers)
         return headers
 
-    def _get_default_headers(self) -> dict:
+    def _get_default_headers(self, url: str) -> dict:
         raise NotImplementedError
 
     def get(self, url: str, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(kwargs.setdefault('headers', {}))
+        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
         return self._session.get(url, **kwargs)
 
     def post(self, url: str, data: Any = None, json: Any = None, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(kwargs.setdefault('headers', {}))
+        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
         return self._session.post(url, data, json, **kwargs)
 
     def head(self, url: str, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(kwargs.setdefault('headers', {}))
+        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
         return self._session.head(url, **kwargs)
 
     def delete(self, url: str, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(kwargs.setdefault('headers', {}))
+        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
         return self._session.delete(url, **kwargs)
 
     def options(self, url: str, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(kwargs.setdefault('headers', {}))
+        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
         return self._session.options(url, **kwargs)
 
     def patch(self, url: str, data: Any = None, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(kwargs.setdefault('headers', {}))
+        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
         return self._session.patch(url, data, **kwargs)
 
     def put(self, url: str, data: Any = None, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(kwargs.setdefault('headers', {}))
+        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
         return self._session.put(url, data, **kwargs)
 
 
@@ -338,7 +349,7 @@ class Firefox(Browser):
             MimeType("text", "html"),
             MimeType("application", "xhtml+xml"),
             QualifiedMimeType("application", "xml", 0.9),
-            MimeType("image", "webp"),
+            # MimeType("image", "webp"),
             QualifiedMimeType("*", "*", 0.8)
         ]
         self._accept_language = list(lang)
@@ -361,19 +372,21 @@ class Firefox(Browser):
                f"Gecko/{build_id} " \
                f"Firefox/{ff_version}"
 
-    def _get_default_headers(self) -> dict:
+    def _get_default_headers(self, url: str) -> dict:
         headers = {
+            'Host': urlparse(url).hostname,
             'User-Agent': self._user_agent,
             'Accept': ','.join(map(str, self._accept)),
             'Accept-Language': ','.join(map(str, self._accept_language)),
             'Accept-Encoding': ', '.join(map(str, self._accept_encoding))
         }
+        if self._connection != '':
+            headers['Connection'] = self._connection
         if self._dnt:
             headers['DNT'] = '1'
         if self._upgrade_insecure_requests:
             headers['Upgrade-Insecure-Requests'] = '1'
-        if self._connection != '':
-            headers['Connection'] = self._connection
+        headers['TE'] = 'Trailers'
         return headers
 
 
@@ -418,7 +431,7 @@ class Chrome(Browser):
                f"Chrome/{'.'.join(map(str, version))} " \
                f"Safari/{webkit_ver}"
 
-    def _get_default_headers(self) -> dict:
+    def _get_default_headers(self, **kwargs) -> dict:
         headers = {
             'User-Agent': self._user_agent,
             'Accept': ','.join(map(str, self._accept)),

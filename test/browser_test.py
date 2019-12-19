@@ -1,14 +1,17 @@
 import unittest
 
 # https://developers.whatismybrowser.com/useragents/explore/
-from webbot.browser import Firefox, Windows
+from webbot.browser import Firefox, Linux
+from webbot.util.har import HarSession
 
 
-class UserAgentTest(unittest.TestCase):
+class WuxiaWorldTest(unittest.TestCase):
     def test_FF(self):
-        browser = Firefox(Windows(native=False))
-        self.assertEqual('Mozilla/5.0 (Windows NT 10.0; WOW64; rv:71.0) Gecko/20100101 Firefox/71.0',
-                         browser.user_agent)
+        browser = Firefox(Linux())
+        browser.session = HarSession('../test_data/www.wuxiaworld.com_Archive_fresh_and_extensive.har')
+        resp = browser.get('https://www.wuxiaworld.com/')
+        print(resp.cookies)
+        self.assertIsNotNone(resp)
 
 
 if __name__ == '__main__':
