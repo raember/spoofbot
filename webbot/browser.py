@@ -1,9 +1,9 @@
 import mimetypes
 from enum import Enum
 from typing import List, Any
-from urllib.parse import urlparse
 
 import requests
+from urllib3.util.url import parse_url, Url
 
 
 class OS:
@@ -209,8 +209,9 @@ class Browser:
     _accept_encoding: List[str]
     _dnt: bool = False
     _upgrade_insecure_requests: bool = False
-    _connection: str = ""
+    _connection: str = ''
     _session: requests.Session = requests.Session()
+    _last_url: str = ''
 
     @property
     def user_agent(self) -> str:
@@ -285,51 +286,81 @@ class Browser:
         """
         raise NotImplementedError
 
-    def _assemble_headers(self, url: str, custom_headers: dict = None) -> dict:
+    def _assemble_headers(self, url: str, method: str, custom_headers: dict = None) -> dict:
         headers = self._get_default_headers(url)
-        mimetype, enc = mimetypes.guess_type(url)
+        mimetype, enc = mimetypes.guess_type(self._strip_query(url))
         if mimetype is not None:
-            print(f"MimeType: {mimetype}")
-            print(f"Encoding: {enc}")
-            if not custom_headers:
-                custom_headers = {}
-            custom_headers.setdefault('Accept', mimetype)
+            headers['Accept'] = mimetype
             if enc:
-                custom_headers.setdefault('Accept-Encoding', enc)
-        if custom_headers:
-            headers.update(custom_headers)
+                headers['Accept-Encoding'] = enc
+        if 'Referer' not in headers and self._last_url != '':
+            headers['Referer'] = self._last_url
+        if parse_url(url).scheme == 'https':
+            if 'TE' not in headers:
+                headers['TE'] = 'Trailers'
+        else:
+            headers['accept-encoding'] = ', '.join(['gzip', 'deflate'])
+        if method in ['POST', 'PATCH', 'PUT']:
+            headers.setdefault('Origin', self._get_origin())
+        headers.update(custom_headers)
         return headers
 
     def _get_default_headers(self, url: str) -> dict:
         raise NotImplementedError
 
+    def _get_origin(self) -> str:
+        url = parse_url(self._last_url)
+        return str(Url(url.scheme, None, url.host, url.port))
+
+    def _strip_query(self, url: str) -> str:
+        url = parse_url(url)
+        return str(Url(url.scheme, None, url.host, url.port, url.path))
+
+    def navigate(self, url: str, **kwargs) -> requests.Response:
+        resp = self.get(url, **kwargs)
+        self._last_url = resp.url
+        return resp
+
     def get(self, url: str, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
-        return self._session.get(url, **kwargs)
+        kwargs['headers'] = self._assemble_headers(url, 'GET', kwargs.setdefault('headers', {}))
+        resp = self._session.get(url, **kwargs)
+        return resp
 
     def post(self, url: str, data: Any = None, json: Any = None, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
-        return self._session.post(url, data, json, **kwargs)
+        kwargs['headers'] = self._assemble_headers(url, 'POST', kwargs.setdefault('headers', {}))
+        resp = self._session.post(url, data, json, **kwargs)
+        if resp.request.method == 'GET':  # In case of redirect
+            self._last_url = resp.url
+        return resp
 
     def head(self, url: str, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
-        return self._session.head(url, **kwargs)
+        kwargs['headers'] = self._assemble_headers(url, 'HEAD', kwargs.setdefault('headers', {}))
+        resp = self._session.head(url, **kwargs)
+        return resp
 
     def delete(self, url: str, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
-        return self._session.delete(url, **kwargs)
+        kwargs['headers'] = self._assemble_headers(url, 'DELETE', kwargs.setdefault('headers', {}))
+        resp = self._session.delete(url, **kwargs)
+        return resp
 
     def options(self, url: str, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
-        return self._session.options(url, **kwargs)
+        kwargs['headers'] = self._assemble_headers(url, 'OPTIONS', kwargs.setdefault('headers', {}))
+        resp = self._session.options(url, **kwargs)
+        return resp
 
     def patch(self, url: str, data: Any = None, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
-        return self._session.patch(url, data, **kwargs)
+        kwargs['headers'] = self._assemble_headers(url, 'PATCH', kwargs.setdefault('headers', {}))
+        resp = self._session.patch(url, data, **kwargs)
+        if resp.request.method == 'GET':  # In case of redirect
+            self._last_url = resp.url
+        return resp
 
     def put(self, url: str, data: Any = None, **kwargs) -> requests.Response:
-        kwargs['headers'] = self._assemble_headers(url, kwargs.setdefault('headers', {}))
-        return self._session.put(url, data, **kwargs)
+        kwargs['headers'] = self._assemble_headers(url, 'PUT', kwargs.setdefault('headers', {}))
+        resp = self._session.put(url, data, **kwargs)
+        if resp.request.method == 'GET':  # In case of redirect
+            self._last_url = resp.url
+        return resp
 
 
 class Firefox(Browser):
@@ -374,7 +405,7 @@ class Firefox(Browser):
 
     def _get_default_headers(self, url: str) -> dict:
         headers = {
-            'Host': urlparse(url).hostname,
+            'Host': parse_url(url).hostname,
             'User-Agent': self._user_agent,
             'Accept': ','.join(map(str, self._accept)),
             'Accept-Language': ','.join(map(str, self._accept_language)),
@@ -386,7 +417,6 @@ class Firefox(Browser):
             headers['DNT'] = '1'
         if self._upgrade_insecure_requests:
             headers['Upgrade-Insecure-Requests'] = '1'
-        headers['TE'] = 'Trailers'
         return headers
 
 
