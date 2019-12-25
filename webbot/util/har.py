@@ -1,3 +1,5 @@
+"""Provides functionality to inject HAR files as basis for a session to run on"""
+
 import base64
 import json
 import logging
@@ -45,6 +47,7 @@ class EmailMessage(message.Message):
 
 
 class HarAdapter(HTTPAdapter):
+    """An adapter to be registered in a Session.."""
     _data: dict = None
     _log = logging.getLogger('HarAdapter')
 

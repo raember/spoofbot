@@ -8,9 +8,8 @@ import PIL
 from PIL.Image import Image
 from bs4 import BeautifulSoup, Tag
 
-from webbot.browser import Firefox
-from webbot.util.common import encode_form_data
-from webbot.util.har import load_har, HarAdapter
+from webbot import Firefox
+from webbot.util import encode_form_data, load_har, HarAdapter
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(name)18s: %(message)s',

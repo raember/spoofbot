@@ -1,7 +1,7 @@
 import unittest
 
 # https://developers.whatismybrowser.com/useragents/explore/
-from webbot.browser import Firefox, Linux, Chrome, Windows, MacOSX
+from webbot import Firefox, Linux, Chrome, Windows, MacOSX
 
 
 class FirefoxUserAgentTest(unittest.TestCase):
