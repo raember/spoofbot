@@ -1,27 +1,25 @@
 import json
 import logging
 import unittest
-# https://developers.whatismybrowser.com/useragents/explore/
 from io import BytesIO
 
 import PIL
 from PIL.Image import Image
 from bs4 import BeautifulSoup, Tag
 
-from webbot import Firefox
-from webbot.util import encode_form_data, load_har, HarAdapter
+from tests.config import get_path
+from webot import Firefox, Chrome
+from webot import Windows, MacOSX, Linux
+from webot.adapter import load_har, HarAdapter
+from webot.util import encode_form_data
 
-logging.basicConfig(
-    format='%(asctime)s %(levelname)-8s %(name)18s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    level=logging.DEBUG
-)
+logging.basicConfig(level=logging.DEBUG)
 
 
 class WuxiaWorldTest(unittest.TestCase):
     def test_FF(self):
         browser = Firefox()
-        har_adapter = HarAdapter(load_har('../test_data/www.wuxiaworld.com_Archive_ALL.har'))
+        har_adapter = HarAdapter(load_har(get_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
         browser.session.mount('http://', har_adapter)
         browser.session.mount('https://', har_adapter)
 
@@ -33,9 +31,10 @@ class WuxiaWorldTest(unittest.TestCase):
         self.assertEqual(200, resp.status_code)
         print(f"### {resp.url}")
 
-        with open('../test_data/ww_auth.json', 'r') as fp:
+        with open(get_path('../test_data/ww_auth.json'), 'r') as fp:
             auth = json.load(fp)
         doc = BeautifulSoup(resp.text, features="html.parser")
+        # noinspection PyTypeChecker
         rvt_input: Tag = doc.select_one('input[name="__RequestVerificationToken"]')
         data = [
             ('Email', auth['Email']),
@@ -59,6 +58,7 @@ class WuxiaWorldTest(unittest.TestCase):
         print(f"### {resp.url}")
 
         doc = BeautifulSoup(resp.text, features="html.parser")
+        # noinspection PyTypeChecker
         rvt_input: Tag = doc.select_one('input[name="__RequestVerificationToken"]')
         data = [
             ('Type', 'Login'),
@@ -121,6 +121,82 @@ class WuxiaWorldTest(unittest.TestCase):
         resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-2')
         self.assertEqual(200, resp.status_code)
         print(f"### {resp.url}")
+
+
+class FirefoxUserAgentTest(unittest.TestCase):
+    def test_default(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20100101 Firefox/71.0',
+            Firefox.create_user_agent()
+        )
+
+    def test_win(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20100101 Firefox/71.0',
+            Firefox.create_user_agent(Windows())
+        )
+
+    def test_mac(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15; rv:71.0) Gecko/20100101 Firefox/71.0',
+            Firefox.create_user_agent(MacOSX())
+        )
+
+    def test_linux(self):
+        self.assertEqual(
+            'Mozilla/5.0 (X11; Linux x86_64; rv:71.0) Gecko/20100101 Firefox/71.0',
+            Firefox.create_user_agent(Linux())
+        )
+
+    def test_69_42(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:69.42) Gecko/20100101 Firefox/69.42',
+            Firefox.create_user_agent(version=(69, 42))
+        )
+
+    def test_20181001000000(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20181001000000 Firefox/71.0',
+            Firefox.create_user_agent(build_id=20181001000000)
+        )
+
+
+class ChromeUserAgentTest(unittest.TestCase):
+    def test_default(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36',
+            Chrome.create_user_agent()
+        )
+
+    def test_win(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36',
+            Chrome.create_user_agent(Windows())
+        )
+
+    def test_mac(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36',
+            Chrome.create_user_agent(MacOSX())
+        )
+
+    def test_linux(self):
+        self.assertEqual(
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36',
+            Chrome.create_user_agent(Linux())
+        )
+
+    def test_69_42(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36',
+            Chrome.create_user_agent(version=(59, 0, 3071, 115))
+        )
+
+    def test_20181001000000(self):
+        self.assertEqual(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/536.5 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/536.5',
+            Chrome.create_user_agent(webkit_version=(536, 5))
+        )
 
 
 if __name__ == '__main__':

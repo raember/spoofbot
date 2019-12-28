@@ -4,8 +4,8 @@ from typing import List, Any
 import requests
 from urllib3.util.url import parse_url, Url
 
-from webbot.operating_system import Windows
-from webbot.tag import MimeTypeTag, LanguageTag
+from webot.operating_system import Windows
+from webot.tag import MimeTypeTag, LanguageTag
 
 
 class Browser:
@@ -128,46 +128,38 @@ class Browser:
         self._last_url = resp.url
         return resp
 
+    def _handle_response(self, response: requests.Response) -> requests.Response:
+        if response.history:  # In case of redirect
+            self._last_url = response.url
+        return response
+
     def get(self, url: str, **kwargs) -> requests.Response:
         kwargs['headers'] = self._assemble_headers(url, 'GET', kwargs.setdefault('headers', {}))
-        resp = self._session.get(url, **kwargs)
-        return resp
+        return self._handle_response(self._session.get(url, **kwargs))
 
     def post(self, url: str, data: Any = None, json: Any = None, **kwargs) -> requests.Response:
         kwargs['headers'] = self._assemble_headers(url, 'POST', kwargs.setdefault('headers', {}))
-        resp = self._session.post(url, data, json, **kwargs)
-        if resp.request.method == 'GET':  # In case of redirect
-            self._last_url = resp.url
-        return resp
+        return self._handle_response(self._session.post(url, data, json, **kwargs))
 
     def head(self, url: str, **kwargs) -> requests.Response:
         kwargs['headers'] = self._assemble_headers(url, 'HEAD', kwargs.setdefault('headers', {}))
-        resp = self._session.head(url, **kwargs)
-        return resp
+        return self._handle_response(self._session.head(url, **kwargs))
 
     def delete(self, url: str, **kwargs) -> requests.Response:
         kwargs['headers'] = self._assemble_headers(url, 'DELETE', kwargs.setdefault('headers', {}))
-        resp = self._session.delete(url, **kwargs)
-        return resp
+        return self._handle_response(self._session.delete(url, **kwargs))
 
     def options(self, url: str, **kwargs) -> requests.Response:
         kwargs['headers'] = self._assemble_headers(url, 'OPTIONS', kwargs.setdefault('headers', {}))
-        resp = self._session.options(url, **kwargs)
-        return resp
+        return self._handle_response(self._session.options(url, **kwargs))
 
     def patch(self, url: str, data: Any = None, **kwargs) -> requests.Response:
         kwargs['headers'] = self._assemble_headers(url, 'PATCH', kwargs.setdefault('headers', {}))
-        resp = self._session.patch(url, data, **kwargs)
-        if resp.request.method == 'GET':  # In case of redirect
-            self._last_url = resp.url
-        return resp
+        return self._handle_response(self._session.patch(url, data, **kwargs))
 
     def put(self, url: str, data: Any = None, **kwargs) -> requests.Response:
         kwargs['headers'] = self._assemble_headers(url, 'PUT', kwargs.setdefault('headers', {}))
-        resp = self._session.put(url, data, **kwargs)
-        if resp.request.method == 'GET':  # In case of redirect
-            self._last_url = resp.url
-        return resp
+        return self._handle_response(self._session.put(url, data, **kwargs))
 
 
 class Firefox(Browser):

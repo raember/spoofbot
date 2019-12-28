@@ -3,78 +3,64 @@
 import base64
 import json
 import logging
-import re
-from email import parser, message
 from io import BytesIO
 from typing import List, Tuple
 
 from requests import PreparedRequest
-from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
 from urllib3.response import HTTPResponse
 from urllib3.util.url import parse_url
 
-
-def coerce_content(content, encoding=None):
-    if hasattr(content, 'decode'):
-        content = content.decode(encoding or 'utf-8', 'replace')
-    return content
+from webot.adapter.common import MockHTTPResponse, ReportingAdapter
 
 
-# Thanks, buddy:
-# https://stackoverflow.com/questions/26740791/using-requests-adapters-httpadapter-for-testing
-# https://github.com/betamaxpy/betamax/blob/ec077d93cf95b65456819b86174af31d025f0d3c/betamax/cassette/util.py#L118
-class MockHTTPResponse():
-    def __init__(self, headers):
-        h = ["%s: %s" % (k, v) for (k, v) in headers]
-        h = map(coerce_content, h)
-        h = '\r\n'.join(h)
-        p = parser.Parser(EmailMessage)
-        # Thanks to Python 3, we have to use the slightly more awful API below
-        # mimetools was deprecated so we have to use email.message.Message
-        # which takes no arguments in its initializer.
-        self.msg = p.parsestr(h)
-        self.msg.set_payload(h)
-
-    def isclosed(self):
-        return False
-
-
-class EmailMessage(message.Message):
-    def getheaders(self, value, *args):
-        # noinspection PyArgumentList
-        return re.split(b', ', self.get(value, b'', *args))
-
-
-class HarAdapter(HTTPAdapter):
+class HarAdapter(ReportingAdapter):
     """An adapter to be registered in a Session.."""
     _data: dict = None
-    _log = logging.getLogger('HarAdapter')
+    _log: logging.Logger
+    _strict_matching: bool = True
+    _delete_after_match: bool = True
 
     def __init__(self, har_data: dict):
         super(HarAdapter, self).__init__()
+        self._log = logging.getLogger(self.__class__.__name__)
         self._data = har_data
-        self._log.setLevel(logging.DEBUG)
+
+    @property
+    def strict_matching(self) -> bool:
+        return self._strict_matching
+
+    @strict_matching.setter
+    def strict_matching(self, value: bool):
+        self._strict_matching = value
+
+    @property
+    def delete_after_match(self) -> bool:
+        return self._delete_after_match
+
+    @delete_after_match.setter
+    def delete_after_match(self, value: bool):
+        self._delete_after_match = value
 
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None):
-        self._log.info(f"Matching {request.method} {request.url}")
+        self._report_request(request)
         entries: list = self._data['log']['entries']
         for i, entry in enumerate(entries):
             req = entry['request']
             if req['method'] == request.method and req['url'] == request.url:
-                other_headers = CaseInsensitiveDict(self._to_dict(req['headers']))
-                if not self._match_dict(request.headers, other_headers):
-                    self._log.warning(f"Headers mismatch:\n{request.headers}\n !=\n{other_headers}")
-                    continue
+                if self._strict_matching:
+                    other_headers = CaseInsensitiveDict(self._to_dict(req['headers']))
+                    if not self._match_dict(request.headers, other_headers):
+                        self._log.warning(f"Headers mismatch:\n{request.headers}\n!=\n{other_headers}")
+                        continue
                 if 'postData' in req:
                     if not req['postData']['text'] == request.body:
-                        self._log.error(f"Post data mismatch:\n{request.headers}\n !=\n{other_headers}")
+                        self._log.error(f"Post data mismatch:\n{request.body}\n!=\n{req['postData']['text']}")
                         continue
-                self._log.info("Request matched")
-                resp = entry['response']
-                response = self._create_response(resp)
-                if resp['redirectURL'] != '':
-                    url = parse_url(resp['redirectURL'])
+                self._log.debug("Request matched")
+                json_response = entry['response']
+                if json_response['redirectURL'] != '':
+                    url = parse_url(json_response['redirectURL'])
                     if url.hostname is not None:
                         request.headers['Host'] = url.hostname
                     if 'Origin' in request.headers:
@@ -83,9 +69,12 @@ class HarAdapter(HTTPAdapter):
                         request.headers['accept-encoding'] = ', '.join(['gzip', 'deflate', 'br'])
                         if 'TE' not in request.headers:
                             request.headers['TE'] = 'Trailers'
-                del entries[i]  # Delete entry as we already matched it once.
-                self._log.debug("Deleted matched entry from list")
-                return self.build_response(request, response)
+                if self._delete_after_match:
+                    del entries[i]  # Delete entry as we already matched it once.
+                    self._log.debug("Deleted matched entry from list")
+                response = self.build_response(request, self._create_response(json_response))
+                self._report_response(response)
+                return response
         raise Exception("No matching entry in HAR found")
 
     def _to_dict(self, other: List[dict]) -> List[Tuple[str, str]]:
@@ -119,9 +108,9 @@ class HarAdapter(HTTPAdapter):
                     return False
         return True
 
-    def _create_response(self, resp: dict) -> HTTPResponse:
-        resp_headers = self._to_dict(resp['headers'])
-        content = resp['content']
+    def _create_response(self, json_response: dict) -> HTTPResponse:
+        headers = self._to_dict(json_response['headers'])
+        content = json_response['content']
         if 'text' in content:
             text = content['text']
             if 'encoding' in content:
@@ -136,10 +125,10 @@ class HarAdapter(HTTPAdapter):
             body = b""
         return HTTPResponse(
             body=BytesIO(body),
-            headers=resp_headers,
-            status=resp['status'],
+            headers=headers,
+            status=json_response['status'],
             preload_content=False,
-            original_response=MockHTTPResponse(resp_headers)
+            original_response=MockHTTPResponse(headers)
         )
 
 

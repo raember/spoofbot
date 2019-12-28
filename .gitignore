@@ -1,3 +1,4 @@
 # Project exclude paths
 /venv/
 test_data
+.cache
