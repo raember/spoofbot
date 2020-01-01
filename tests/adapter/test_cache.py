@@ -3,7 +3,7 @@ import unittest
 
 from requests import Session
 
-from tests.config import get_path
+from tests.config import resolve_path
 from webot.adapter import CacheAdapter
 
 logging.basicConfig(level=logging.DEBUG)
@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.DEBUG)
 class CacheAdapterTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.cache_adapter = CacheAdapter(get_path('../../tests/adapter/.cache'))
+        cls.cache_adapter = CacheAdapter(resolve_path('../../tests/adapter/.cache'))
         cls.session = Session()
         cls.session.mount('http://', cls.cache_adapter)
         cls.session.mount('https://', cls.cache_adapter)

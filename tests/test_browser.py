@@ -7,7 +7,7 @@ import PIL
 from PIL.Image import Image
 from bs4 import BeautifulSoup, Tag
 
-from tests.config import get_path
+from tests.config import resolve_path
 from webot import Firefox, Chrome
 from webot import Windows, MacOSX, Linux
 from webot.adapter import load_har, HarAdapter
@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.DEBUG)
 class WuxiaWorldTest(unittest.TestCase):
     def test_FF(self):
         browser = Firefox()
-        har_adapter = HarAdapter(load_har(get_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
+        har_adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
         browser.session.mount('http://', har_adapter)
         browser.session.mount('https://', har_adapter)
 
@@ -31,7 +31,7 @@ class WuxiaWorldTest(unittest.TestCase):
         self.assertEqual(200, resp.status_code)
         print(f"### {resp.url}")
 
-        with open(get_path('../test_data/ww_auth.json'), 'r') as fp:
+        with open(resolve_path('../test_data/ww_auth.json'), 'r') as fp:
             auth = json.load(fp)
         doc = BeautifulSoup(resp.text, features="html.parser")
         # noinspection PyTypeChecker

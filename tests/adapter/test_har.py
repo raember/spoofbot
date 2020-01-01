@@ -3,7 +3,7 @@ import unittest
 
 from requests import Session
 
-from tests.config import get_path
+from tests.config import resolve_path
 from webot.adapter import HarAdapter, load_har
 
 logging.basicConfig(level=logging.DEBUG)
@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.DEBUG)
 class HarProxyTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.har_adapter = HarAdapter(load_har(get_path('../../test_data/www.wuxiaworld.com_Archive_ALL.har')))
+        cls.har_adapter = HarAdapter(load_har(resolve_path('../../test_data/www.wuxiaworld.com_Archive_ALL.har')))
         cls.session = Session()
         cls.session.mount('http://', cls.har_adapter)
         cls.session.mount('https://', cls.har_adapter)

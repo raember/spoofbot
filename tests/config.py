@@ -1,8 +1,12 @@
 """Used for storing tests related data like paths for reuse"""
-import os
+from os.path import dirname, abspath, join
+from typing import Tuple
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = dirname(dirname(abspath(__file__)))
 
 
-def get_path(path: str) -> str:
-    return os.path.join(ROOT, path.replace('../', ''))
+def resolve_path(path) -> str:
+    if isinstance(path, str):
+        return join(ROOT, path.replace('../', ''))
+    elif isinstance(path, Tuple):
+        return join(ROOT, *[frag for frag in path if frag != '..'])
