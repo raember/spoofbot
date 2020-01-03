@@ -53,7 +53,8 @@ class CacheAdapter(ReportingAdapter):
         response = self._check_cache_for(request)
         if not response:
             response = super(CacheAdapter, self).send(request, stream, timeout, verify, cert, proxies)
-            self._store(response)
+            if not response.is_redirect:
+                self._store(response)
         self._report_response(response)
         return response
 
