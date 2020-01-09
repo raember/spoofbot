@@ -11,7 +11,7 @@ from requests.structures import CaseInsensitiveDict
 from urllib3.response import HTTPResponse
 from urllib3.util.url import parse_url
 
-from webot.adapter.common import MockHTTPResponse, ReportingAdapter
+from spoofbot.adapter.common import MockHTTPResponse, ReportingAdapter
 
 
 class HarAdapter(ReportingAdapter):
@@ -80,7 +80,8 @@ class HarAdapter(ReportingAdapter):
     def _to_dict(self, other: List[dict]) -> List[Tuple[str, str]]:
         d = []
         for kv in other:
-            d.append((kv['name'], kv['value']))
+            if not kv['name'] == 'content-encoding':
+                d.append((kv['name'], kv['value']))
         return d
 
     def _match_dict(self, own: CaseInsensitiveDict, other: CaseInsensitiveDict) -> bool:

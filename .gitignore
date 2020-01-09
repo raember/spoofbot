@@ -2,3 +2,6 @@
 /venv/
 test_data
 .cache
+build
+dist
+*.egg-info

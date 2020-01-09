@@ -2,9 +2,10 @@ import logging
 import unittest
 
 from requests import Session
+from urllib3.util import parse_url
 
+from spoofbot.adapter import CacheAdapter
 from tests.config import resolve_path
-from webot.adapter import CacheAdapter
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -20,33 +21,48 @@ class CacheAdapterTest(unittest.TestCase):
     def test_request_hit(self):
         self.cache_adapter.use_cache = True
         self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com/novel/heavenly-jewel-change"))
-        self.assertTrue(self.cache_adapter._hit)
+        self.assertTrue(self.cache_adapter.hit)
 
     def test_request_miss(self):
         self.cache_adapter.use_cache = False
         self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com/novel/heavenly-jewel-change"))
-        self.assertFalse(self.cache_adapter._hit)
+        self.assertFalse(self.cache_adapter.hit)
 
     def test_delete(self):
         self.cache_adapter.use_cache = True
         self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
-        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
-        self.assertTrue(self.cache_adapter._hit)
         self.session.get("https://httpbin.org/headers", headers={'Accept': 'text/json'})
-        self.session.get("https://httpbin.org/headers", headers={'Accept': 'text/json'})
-        self.assertTrue(self.cache_adapter._hit)
         self.cache_adapter.delete("https://httpbin.org/anything", headers={'Accept': 'text/json'})
         self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
-        self.assertFalse(self.cache_adapter._hit)
+        self.assertFalse(self.cache_adapter.hit)
+        self.session.get("https://httpbin.org/headers", headers={'Accept': 'text/json'})
+        self.assertTrue(self.cache_adapter.hit)
 
     def test_delete_last(self):
         self.cache_adapter.use_cache = True
-        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
-        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
-        self.assertTrue(self.cache_adapter._hit)
         self.session.get("https://httpbin.org/headers", headers={'Accept': 'text/json'})
-        self.session.get("https://httpbin.org/headers", headers={'Accept': 'text/json'})
-        self.assertTrue(self.cache_adapter._hit)
         self.cache_adapter.delete_last()
         self.session.get("https://httpbin.org/headers", headers={'Accept': 'text/json'})
-        self.assertFalse(self.cache_adapter._hit)
+        self.assertFalse(self.cache_adapter.hit)
+
+    def test_cache_different_path(self):
+        self.cache_adapter.use_cache = True
+        self.cache_adapter.delete("https://httpbin.org/anything2", headers={'Accept': 'text/json'})
+        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
+        self.assertIsNone(self.cache_adapter.next_request_cache_url)
+        self.cache_adapter.next_request_cache_url = parse_url("https://httpbin.org/anything2")
+        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
+        self.assertFalse(self.cache_adapter.hit)
+
+    def test_delete_last_with_different_path(self):
+        self.cache_adapter.use_cache = True
+        self.cache_adapter.delete("https://httpbin.org/anything2", headers={'Accept': 'text/json'})
+        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
+        self.assertIsNone(self.cache_adapter.next_request_cache_url)
+        self.cache_adapter.next_request_cache_url = parse_url("https://httpbin.org/anything2")
+        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
+        self.assertFalse(self.cache_adapter.hit)
+        self.cache_adapter.delete_last()
+        self.cache_adapter.next_request_cache_url = parse_url("https://httpbin.org/anything2")
+        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
+        self.assertFalse(self.cache_adapter.hit)

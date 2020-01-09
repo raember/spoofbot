@@ -3,8 +3,8 @@ import unittest
 
 from requests import Session
 
+from spoofbot.adapter import HarAdapter, load_har
 from tests.config import resolve_path
-from webot.adapter import HarAdapter, load_har
 
 logging.basicConfig(level=logging.DEBUG)
 

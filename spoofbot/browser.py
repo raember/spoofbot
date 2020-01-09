@@ -4,8 +4,8 @@ from typing import List, Any
 import requests
 from urllib3.util.url import parse_url, Url
 
-from webot.operating_system import Windows
-from webot.tag import MimeTypeTag, LanguageTag
+from spoofbot.operating_system import Windows
+from spoofbot.tag import MimeTypeTag, LanguageTag
 
 
 class Browser:

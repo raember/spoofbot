@@ -7,11 +7,11 @@ import PIL
 from PIL.Image import Image
 from bs4 import BeautifulSoup, Tag
 
+from spoofbot import Firefox, Chrome
+from spoofbot import Windows, MacOSX, Linux
+from spoofbot.adapter import load_har, HarAdapter
+from spoofbot.util import encode_form_data
 from tests.config import resolve_path
-from webot import Firefox, Chrome
-from webot import Windows, MacOSX, Linux
-from webot.adapter import load_har, HarAdapter
-from webot.util import encode_form_data
 
 logging.basicConfig(level=logging.DEBUG)
 

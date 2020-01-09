@@ -7,7 +7,7 @@ from requests import Response, PreparedRequest
 from urllib3 import HTTPResponse
 from urllib3.util import parse_url, Url
 
-from webot.adapter.common import MockHTTPResponse, ReportingAdapter
+from spoofbot.adapter.common import MockHTTPResponse, ReportingAdapter
 
 
 class CacheAdapter(ReportingAdapter):
@@ -16,6 +16,8 @@ class CacheAdapter(ReportingAdapter):
     _use_cache = True
     _hit = False
     _last_request: PreparedRequest
+    _last_next_request_cache_url: Url
+    _next_request_cache_url: Url = None
     EXTENSIONS = ['.html', '.jpg', '.jpeg', '.png', '.json']
 
     def __init__(self, path: str = '.cache'):
@@ -41,6 +43,14 @@ class CacheAdapter(ReportingAdapter):
     def hit(self) -> bool:
         return self._hit
 
+    @property
+    def next_request_cache_url(self) -> Url:
+        return self._next_request_cache_url
+
+    @next_request_cache_url.setter
+    def next_request_cache_url(self, value: Url):
+        self._next_request_cache_url = value
+
     def send(self,
              request: PreparedRequest,
              stream=False,
@@ -56,6 +66,8 @@ class CacheAdapter(ReportingAdapter):
             if not response.is_redirect:
                 self._store(response)
         self._report_response(response)
+        # noinspection PyTypeChecker
+        self._last_next_request_cache_url, self._next_request_cache_url = self._next_request_cache_url, None
         return response
 
     def _check_cache_for(self, request: PreparedRequest) -> Optional[Response]:
@@ -74,6 +86,8 @@ class CacheAdapter(ReportingAdapter):
         return None
 
     def _get_filename(self, url: Url, headers: dict):
+        if self._next_request_cache_url is not None:
+            url = self._next_request_cache_url
         path = os.path.splitext(url.path)[0] + self._extract_extension(url, headers)
         return os.path.normpath(os.path.join(self._path, url.host + path))
 
@@ -135,4 +149,7 @@ class CacheAdapter(ReportingAdapter):
 
     def delete_last(self):
         if self._last_request:
+            temp_url, self.next_request_cache_url = self._next_request_cache_url, self._last_next_request_cache_url
+            self.next_request_cache_url = self._last_next_request_cache_url
             self.delete(self._last_request.url, headers=self._last_request.headers)
+            self.next_request_cache_url = temp_url
