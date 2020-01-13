@@ -5,9 +5,7 @@ Supports Firefox and Chrome browser on most generic Windows, MacOS and Linux spo
 ## Example usage
 ```py
 browser = Chrome()
-cache = CacheAdapter()
-browser.session.mount('https://', cache)
-browser.session.mount('http://', cache)
+browser.adapter = CacheAdapter()
 
 browser.navigate('https://httpbin.org/')
 spec = browser.get('https://httpbin.org/spec.json').json()
