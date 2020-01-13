@@ -1,4 +1,4 @@
 """Adapters to mount on sessions"""
 
-from .cache import CacheAdapter
+from .file import FileCacheAdapter
 from .har import HarAdapter, load_har

@@ -32,8 +32,11 @@ browser = Firefox()
 browser._accept_encoding = ['deflate', 'gzip']  # brotli (br) is cumbersome
 ``` 
 
+The browsers have an automatic request delay built in which can be controlled with the `request_timeout` and `honor_timeout`.
+After requests have been made, `did_wait` and `waiting_period` provide further information.
+
 ## File Cache
-Using `CacheAdapter`, one can store responses (without metadata such as headers) in the filesystem.
+Using `FileCacheAdapter`, one can store responses (without metadata such as headers) in the filesystem.
 It supports deleting the last request or a specific file from the cache.
 The cache indicates whether the last made request got a cache hit.
 If there is a request that should be cached that cannot be adequately stored with only hostname and path, one can specify and alternative url to use instead of the request's prior to the request.

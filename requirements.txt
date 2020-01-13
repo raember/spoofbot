@@ -1,2 +1,5 @@
 urllib3
 requests
+bs4
+pillow
+toposort

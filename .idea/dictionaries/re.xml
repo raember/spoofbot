@@ -2,7 +2,13 @@
   <dictionary name="re">
     <words>
       <w>brotli</w>
+      <w>khtml</w>
+      <w>mimetype</w>
+      <w>toposort</w>
       <w>useragents</w>
+      <w>webp</w>
+      <w>wuxia</w>
+      <w>wuxiaworld</w>
     </words>
   </dictionary>
 </component>

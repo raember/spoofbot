@@ -5,7 +5,9 @@ from io import BytesIO
 
 import PIL
 from PIL.Image import Image
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
+from bs4.element import Tag
+from urllib3.util import parse_url
 
 from spoofbot import Firefox, Chrome
 from spoofbot import Windows, MacOSX, Linux
@@ -19,17 +21,13 @@ logging.basicConfig(level=logging.DEBUG)
 class WuxiaWorldTest(unittest.TestCase):
     def test_FF(self):
         browser = Firefox()
-        har_adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
-        browser.session.mount('http://', har_adapter)
-        browser.session.mount('https://', har_adapter)
+        browser.adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
 
-        resp = browser.navigate('http://wuxiaworld.com/')
+        resp = browser.navigate(parse_url('http://wuxiaworld.com/'))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
-        resp = browser.navigate('https://www.wuxiaworld.com/account/login')
+        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/account/login'))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
         with open(resolve_path('../test_data/ww_auth.json'), 'r') as fp:
             auth = json.load(fp)
@@ -43,19 +41,16 @@ class WuxiaWorldTest(unittest.TestCase):
             ('__RequestVerificationToken', rvt_input.get('value')),
             ('RememberMe', 'false')
         ]
-        resp = browser.post('https://www.wuxiaworld.com/account/login', headers={
+        resp = browser.post(parse_url('https://www.wuxiaworld.com/account/login'), headers={
             'Content-Type': 'application/x-www-form-urlencoded'
         }, data=encode_form_data(data))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
-        resp = browser.navigate('https://www.wuxiaworld.com/profile/karma')
+        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/profile/karma'))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
-        resp = browser.navigate('https://www.wuxiaworld.com/profile/missions')
+        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/profile/missions'))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
         doc = BeautifulSoup(resp.text, features="html.parser")
         # noinspection PyTypeChecker
@@ -64,24 +59,21 @@ class WuxiaWorldTest(unittest.TestCase):
             ('Type', 'Login'),
             ('__RequestVerificationToken', rvt_input.get('value')),
         ]
-        resp = browser.post('https://www.wuxiaworld.com/profile/missions', headers={
+        resp = browser.post(parse_url('https://www.wuxiaworld.com/profile/missions'), headers={
             'Content-Type': 'application/x-www-form-urlencoded'
         }, data=encode_form_data(data))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
-        resp = browser.post('https://www.wuxiaworld.com/account/logout', headers={
+        resp = browser.post(parse_url('https://www.wuxiaworld.com/account/logout'), headers={
             'Accept': 'application/json, text/plain, */*',
             'Upgrade-Insecure-Requests': None,
         }, data='')
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
-        resp = browser.navigate('https://www.wuxiaworld.com/novels')
+        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/novels'))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
-        resp = browser.post('https://www.wuxiaworld.com/api/novels/search', headers={
+        resp = browser.post(parse_url('https://www.wuxiaworld.com/api/novels/search'), headers={
             'Accept': 'application/json, text/plain, */*',
             'Content-Type': 'application/json;charset=utf-8',
             'Upgrade-Insecure-Requests': None,
@@ -96,31 +88,27 @@ class WuxiaWorldTest(unittest.TestCase):
             "count": 15
         }, separators=(',', ':')))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
-        resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens')
+        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/novel/battle-through-the-heavens'))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
         resp = browser.get(
-            'https://cdn.wuxiaworld.com/images/covers/btth.jpg?ver=b49ecfeb59e7f8a1e94379b5bfa58828e70883a4', headers={
+            parse_url('https://cdn.wuxiaworld.com/images/covers/btth.jpg?ver=b49ecfeb59e7f8a1e94379b5bfa58828e70883a4'),
+            headers={
                 'Accept': 'image/webp,*/*',
                 'Upgrade-Insecure-Requests': None,
                 'TE': None,
             })
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
         img: Image = PIL.Image.open(BytesIO(resp.content))
         self.assertEqual(208, img.width)
         self.assertEqual(277, img.height)
 
-        resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-1')
+        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-1'))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
-        resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-2')
+        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-2'))
         self.assertEqual(200, resp.status_code)
-        print(f"### {resp.url}")
 
 
 class FirefoxUserAgentTest(unittest.TestCase):
