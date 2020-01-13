@@ -77,13 +77,14 @@ class FileCacheAdapter(HTTPAdapter):
         parsed_url = parse_url(url)
         path = parsed_url.path.rstrip('/')
         for file in os.listdir(os.path.normpath(os.path.join(self._path, parsed_url.host + parsed_url.path))):
-            urls.append(Url(
-                parsed_url.scheme,
-                host=parsed_url.hostname,
-                path='/'.join((path, os.path.splitext(file)[0])),
-                query=parsed_url.query,
-                fragment=parsed_url.fragment
-            ))
+            if os.path.isfile(os.path.normpath(os.path.join(self._path, parsed_url.host + parsed_url.path, file))):
+                urls.append(Url(
+                    parsed_url.scheme,
+                    host=parsed_url.hostname,
+                    path='/'.join((path, os.path.splitext(file)[0])),
+                    query=parsed_url.query,
+                    fragment=parsed_url.fragment
+                ))
         return urls
 
     def _check_cache_for(self, request: PreparedRequest) -> Optional[Response]:
