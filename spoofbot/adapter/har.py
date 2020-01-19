@@ -1,11 +1,12 @@
 """Provides functionality to inject HAR files as basis for a session to run on"""
 
-import base64
 import json
 import logging
+import os
+import zlib
 from io import BytesIO
-from typing import List, Tuple
 
+import brotli
 from requests import PreparedRequest
 from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
@@ -13,6 +14,7 @@ from urllib3.response import HTTPResponse
 from urllib3.util.url import parse_url
 
 from spoofbot.adapter.common import MockHTTPResponse
+from spoofbot.util.common import dict_to_tuple_list, dict_list_to_dict
 
 
 class HarAdapter(HTTPAdapter):
@@ -49,7 +51,8 @@ class HarAdapter(HTTPAdapter):
             cached_request = entry['request']
             if cached_request['method'] == request.method and cached_request['url'] == request.url:
                 if self._strict_matching:
-                    other_headers = CaseInsensitiveDict(self._to_dict(cached_request['headers']))
+                    other_headers = CaseInsensitiveDict(
+                        dict_to_tuple_list(dict_list_to_dict(cached_request['headers'])))
                     self._log.debug(f"{' ' * len(request.method)}Testing possible match strictly")
                     if not self._match_dict(request.headers, other_headers, len(request.method)):
                         self._log.debug(f"{' ' * len(request.method)}Headers mismatch")
@@ -79,15 +82,9 @@ class HarAdapter(HTTPAdapter):
                         request.headers['accept-encoding'] = ', '.join(['gzip', 'deflate', 'br'])
                         if 'TE' not in request.headers:
                             request.headers['TE'] = 'Trailers'
-                return self.build_response(request, self._create_response(json_response))
+                response = self.build_response(request, self._create_response(json_response))
+                return response
         raise Exception("No matching entry in HAR found")
-
-    def _to_dict(self, other: List[dict]) -> List[Tuple[str, str]]:
-        d = []
-        for kv in other:
-            if not kv['name'] == 'content-encoding':
-                d.append((kv['name'], kv['value']))
-        return d
 
     def _match_dict(self, request_headers: CaseInsensitiveDict, cached_headers: CaseInsensitiveDict,
                     ljustlen: int) -> bool:
@@ -95,6 +92,12 @@ class HarAdapter(HTTPAdapter):
             self._log.warning(f"{' ' * ljustlen}Request headers is None")
             return False
         verdict = True
+        if dict(request_headers).keys() != dict(cached_headers).keys():
+            self._log.debug(f"{' ' * ljustlen}Request header order does not match:")
+            self._log.debug(f"{' ' * ljustlen}{list(dict(request_headers).keys())}")
+            self._log.debug(f"{' ' * ljustlen}does not equal cached:")
+            self._log.debug(f"{' ' * ljustlen}{list(dict(cached_headers).keys())}")
+            verdict = False
         missing_keys = []
         mismatching_keys = []
         redundant_keys = []
@@ -161,27 +164,48 @@ class HarAdapter(HTTPAdapter):
         return verdict
 
     def _create_response(self, json_response: dict) -> HTTPResponse:
-        headers = self._to_dict(json_response['headers'])
+        headers = CaseInsensitiveDict(dict_list_to_dict(json_response['headers']))
         content = json_response['content']
+        body = bytearray()
         if 'text' in content:
-            text = content['text']
-            if 'encoding' in content:
-                encoding = content['encoding']
-                if encoding == 'base64':
-                    body = base64.b64decode(text)
+            data = content['text'].encode('utf8')
+            if 'Content-Encoding' in headers:
+                if headers['Content-Encoding'] == 'gzip':
+                    compressor = zlib.compressobj(9, zlib.DEFLATED, zlib.MAX_WBITS | 16)
+                    body = compressor.compress(data) + compressor.flush()
+                elif headers['Content-Encoding'] == 'br':
+                    body = brotli.compress(data)
+                elif 'encoding' in content:
+                    raise Exception()
                 else:
-                    body = text.decode(encoding)
+                    body = data
+            elif 'encoding' in content:
+                raise Exception()
             else:
-                body = text.encode('utf-8')
-        else:
-            body = b""
+                body = data
+        # if 'text' in content:
+        #     text = content['text']
+        #     if 'encoding' in content:
+        #         encoding = content['encoding']
+        #         if encoding == 'base64':
+        #             body = base64.b64decode(text)
+        #         else:
+        #             body = text.decode(encoding)
+        #     else:
+        #         body = text.encode('utf-8')
+        # else:
+        #     body = b""
+        tuple_headers = dict_to_tuple_list(dict(headers))
         return HTTPResponse(
             body=BytesIO(body),
-            headers=headers,
+            headers=tuple_headers,
             status=json_response['status'],
             preload_content=False,
-            original_response=MockHTTPResponse(headers)
+            original_response=MockHTTPResponse(tuple_headers)
         )
+
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
 
 def load_har(file: str) -> dict:

@@ -31,10 +31,12 @@ class OrderedHeaders(dict):
         'DNT': {'Accept-Encoding'},
         'Content-Type': {'DNT'},
         'Content-Length': {'Content-Type'},
-        'Origin': {'Content-Length'},
+        'Referer': {'Content-Length'},
+        'Origin': {'Referer'},
         'Connection': {'Origin'},
-        'Referer': {'Connection'},
-        'Cookie': {'Referer'},
+        'Cookie': {'Connection'},
+        'Upgrade-Insecure-Request': {'Cookie'},
+        'TE': {'Upgrade-Insecure-Request'},
     })
 
     def items(self):
@@ -62,6 +64,7 @@ class Browser:
     _accept_encoding: List[str]
     _dnt: bool
     _upgrade_insecure_requests: bool
+    _te: str
     _connection: str
     _session: Session
     _adapter: BaseAdapter
@@ -80,6 +83,7 @@ class Browser:
         self._accept_encoding = []
         self._dnt = False
         self._upgrade_insecure_requests = False
+        self._te = 'Trailers'
         self._connection = 'keep-alive'
         self._session = Session()
         self._adapter = self._session.get_adapter('https://')
@@ -138,6 +142,14 @@ class Browser:
     @upgrade_insecure_requests.setter
     def upgrade_insecure_requests(self, value: bool):
         self._upgrade_insecure_requests = value
+
+    @property
+    def transfer_encoding(self) -> str:
+        return self._te
+
+    @transfer_encoding.setter
+    def transfer_encoding(self, value: str):
+        self._te = value
 
     @property
     def connection(self) -> str:
@@ -341,20 +353,79 @@ class Browser:
         return self._handle_response(self._session.put(url, data, **kwargs))
 
     def _report_request(self, method: str, url: Url):
-        self._log.debug(f"\033[36m{method}\033[0m {url}")
+        self._log.debug(f"\033[36m{method}\033[0m {url}")  # 36 = cyan fg
 
     def _report_response(self, response: Response):
-        if response.status_code >= 500:
-            color = 31  # Red
-        elif response.status_code >= 400:
-            color = 35  # Magenta
-        elif response.status_code >= 300:
-            color = 27  # Reverse video
-        elif response.status_code >= 200:
-            color = 32  # Green
-        else:
-            color = 39  # Default
-        self._log.debug(f"{' ' * len(response.request.method)} \033[{color}m← {response.status_code}\033[0m "
+        fg_red = 31
+        fg_mag = 35
+        rev_vd = 7
+        fg_grn = 32
+        fg_wht = 97
+        color, msg = {
+            500: (fg_red, 'Internal Server Error'),
+            501: (fg_red, 'Not Implemented'),
+            502: (fg_red, 'Bad Gateway'),
+            503: (fg_red, 'Service Unavailable'),
+            504: (fg_red, 'Gateway Timeout'),
+            505: (fg_red, 'HTTP Version Not Supported'),
+            506: (fg_mag, 'Variant Also Negotiates'),
+            507: (fg_mag, 'Insufficient Storage'),  # WebDAV
+            508: (fg_mag, 'Loop Detected'),  # WebDAV
+            510: (fg_mag, 'Not Extended'),
+            511: (fg_mag, 'Network Authentication Required'),
+            400: (fg_mag, 'Bad Request'),
+            401: (fg_mag, 'Unauthorized'),
+            402: (fg_mag, 'Payment Required'),
+            403: (fg_mag, 'Forbidden'),
+            404: (fg_mag, 'Not Found'),
+            405: (fg_mag, 'Method Not Allowed'),
+            406: (fg_mag, 'Not Acceptable'),
+            407: (fg_mag, 'Proxy Authentication Required'),
+            408: (fg_mag, 'Request Timeout'),
+            409: (fg_mag, 'Conflict'),
+            410: (fg_mag, 'Gone'),
+            411: (fg_mag, 'Length Required'),
+            412: (fg_mag, 'Precondition Failed'),
+            413: (fg_mag, 'Payload Too Large'),
+            414: (fg_mag, 'URI Too Long'),
+            415: (fg_mag, 'Unsupported Media Type'),
+            416: (fg_mag, 'Range Not Satisfiable'),
+            417: (fg_mag, 'Expectation Failed'),
+            418: (fg_mag, "I'm a teapot"),
+            421: (fg_mag, 'Misdirected Request'),
+            422: (fg_mag, 'Unprocessable Entity'),  # WebDAV
+            423: (fg_mag, 'Locked'),  # WebDAV
+            424: (fg_mag, 'Failed Dependency'),  # WebDAV
+            425: (fg_mag, 'Too Early'),
+            426: (fg_mag, 'Upgrade Required'),
+            428: (fg_mag, 'Precondition Required'),
+            429: (fg_mag, 'Too Many Requests'),
+            431: (fg_mag, 'Request Header Fields Too Large'),
+            451: (fg_mag, 'Unavailable For Legal Reasons'),
+            300: (rev_vd, 'Multiple Choices'),
+            301: (rev_vd, 'Moved Permanently'),
+            302: (rev_vd, 'Found'),
+            303: (rev_vd, 'See Other'),
+            304: (rev_vd, 'Not Modified'),
+            305: (rev_vd, 'Use Proxy'),
+            307: (rev_vd, 'Temporary Redirect'),
+            308: (rev_vd, 'Permanent Redirect'),
+            200: (fg_grn, 'OK'),
+            201: (fg_grn, 'Created'),
+            202: (fg_grn, 'Accepted'),
+            203: (fg_grn, 'Non-Authoritative Information'),
+            204: (fg_grn, 'No Content'),
+            205: (fg_grn, 'Reset Content'),
+            206: (fg_grn, 'Partial Content'),
+            207: (fg_grn, 'Multi-Status'),  # WebDAV
+            208: (fg_grn, 'Already Reported'),  # WebDAV
+            226: (fg_grn, 'IM Used'),
+            100: (fg_wht, 'Continue'),
+            101: (fg_wht, 'Switching Protocols'),
+            102: (fg_wht, 'Processing'),  # WebDAV
+            103: (fg_wht, 'Early Hints'),
+        }.get(response.status_code, (91, 'UNKNOWN'))
+        self._log.debug(f"{' ' * len(response.request.method)} \033[{color}m← {response.status_code} {msg}\033[0m "
                         f"{response.headers.get('Content-Type', '-')}")
 
     def _assemble_headers(self, method: str, url: Url) -> dict:
@@ -367,19 +438,17 @@ class Browser:
         :rtype: OrderedDict
         """
         headers = self._get_default_headers(url)
-        mime_type, enc = mimetypes.guess_type(url.path)
+        mime_type, enc = mimetypes.guess_type(url.path if url.path is not None else '')
         if mime_type is not None:
             headers['Accept'] = mime_type
             if enc:
                 headers['Accept-Encoding'] = enc
-        if 'Referer' not in headers and self._last_url is not None:
-            headers['Referer'] = self._last_url.url
-        if url.scheme == 'https':
-            if 'TE' not in headers:
-                headers['TE'] = 'Trailers'
-        else:
-            headers['Accept-Encoding'] = ', '.join(['gzip', 'deflate'])
-        if method in ['POST', 'PATCH', 'PUT'] and self.origin is not None:
+        if self._last_url is not None:
+            headers.setdefault('Referer', self._last_url.url)
+        headers.setdefault('TE', self._te)
+        # else:
+        #     headers['Accept-Encoding'] = ', '.join(['gzip', 'deflate'])
+        if self.origin is not None and self.origin.hostname == url.hostname and method != 'GET':
             headers.setdefault('Origin', self.origin.url)
         return headers
 
@@ -419,18 +488,16 @@ class Browser:
             self._did_wait = True
             self._log.debug(f"Waiting for {self._waiting_period.total_seconds()} seconds.")
             sleep(self._waiting_period.total_seconds())
-        else:
-            self._log.debug("Delay already expired. No need to wait")
 
 
 class Firefox(Browser):
     def __init__(self,
                  os=Windows(),
-                 ff_version=(71, 0),
+                 ff_version=(72, 0),
                  build_id=20100101,
                  lang=(
                          LanguageTag("en", "US"),
-                         LanguageTag("en", '', 0.5)
+                         LanguageTag("en", q=0.5)
                  ),
                  do_not_track=False,
                  upgrade_insecure_requests=True):
@@ -439,9 +506,9 @@ class Firefox(Browser):
         self._accept = [
             MimeTypeTag("text", "html"),
             MimeTypeTag("application", "xhtml+xml"),
-            MimeTypeTag("application", "xml", 0.9),
-            # MimeTypeTag("image", "webp"),
-            MimeTypeTag("*", "*", 0.8)
+            MimeTypeTag("application", "xml", q=0.9),
+            MimeTypeTag("image", "webp"),
+            MimeTypeTag("*", "*", q=0.8)
         ]
         self._accept_language = list(lang)
         self._accept_encoding = ['gzip', 'deflate', 'br']
@@ -483,22 +550,24 @@ class Firefox(Browser):
 class Chrome(Browser):
     def __init__(self,
                  os=Windows(),
-                 chrome_version=(79, 0, 3945, 88),
+                 chrome_version=(79, 0, 3945, 130),
                  webkit_version=(537, 36),
                  lang=(
                          LanguageTag("en", "US"),
-                         LanguageTag("en", '', 0.5)
+                         LanguageTag("en", q=0.9)
                  ),
                  do_not_track=False,
-                 upgrade_insecure_requests=False):
+                 upgrade_insecure_requests=True):
         super(Chrome, self).__init__()
         self._user_agent = self.create_user_agent(os=os, version=chrome_version, webkit_version=webkit_version)
         self._accept = [
             MimeTypeTag("text", "html"),
             MimeTypeTag("application", "xhtml+xml"),
-            MimeTypeTag("application", "xml", 0.9),
+            MimeTypeTag("application", "xml", q=0.9),
             MimeTypeTag("image", "webp"),
-            MimeTypeTag(quality=0.8)
+            MimeTypeTag("image", "apng"),
+            MimeTypeTag(q=0.8),
+            MimeTypeTag("application", "signed-exchange", v='b3', q=0.9),
         ]
         self._accept_language = list(lang)
         self._accept_encoding = ['gzip', 'deflate', 'br']
@@ -507,7 +576,7 @@ class Chrome(Browser):
         self._connection = 'keep-alive'
 
     @staticmethod
-    def create_user_agent(os=Windows(), version=(79, 0, 3945, 88), webkit_version=(537, 36)) -> str:
+    def create_user_agent(os=Windows(), version=(79, 0, 3945, 130), webkit_version=(537, 36)) -> str:
         """Creates a user agent string for Firefox
 
         :param os: The underlying operating system (default :py:class:`Windows`).
@@ -521,17 +590,18 @@ class Chrome(Browser):
                f"Chrome/{'.'.join(map(str, version))} " \
                f"Safari/{webkit_ver}"
 
-    def _get_default_headers(self, **kwargs) -> OrderedHeaders:
+    def _get_default_headers(self, url: Url) -> OrderedHeaders:
         headers = OrderedHeaders({
+            'Host': url.hostname,
             'User-Agent': self._user_agent,
             'Accept': ','.join(map(str, self._accept)),
             'Accept-Language': ','.join(map(str, self._accept_language)),
             'Accept-Encoding': ', '.join(map(str, self._accept_encoding))
         })
         if self._dnt:
-            headers['DNT'] = 1
+            headers['DNT'] = '1'
         if self._upgrade_insecure_requests:
-            headers['Upgrade-Insecure-Requests'] = 1
+            headers['Upgrade-Insecure-Requests'] = '1'
         if self._connection != '':
             headers['Connection'] = self._connection
         return headers

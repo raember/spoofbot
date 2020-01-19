@@ -2,13 +2,13 @@ class Tag:
     _major: str
     _minor: str
     _separator: str
-    _quality: float
+    _factors: dict
 
-    def __init__(self, major: str, minor="", separator="", quality=1.0):
+    def __init__(self, major: str, minor="", separator="", **kwargs):
         self._major = major
         self._minor = minor
         self._separator = separator
-        self._quality = quality
+        self._factors = kwargs
 
     @property
     def major(self) -> str:
@@ -35,27 +35,29 @@ class Tag:
         self._separator = value
 
     @property
-    def quality(self) -> float:
-        return self._quality
+    def factors(self) -> dict:
+        return self._factors
 
-    @quality.setter
-    def quality(self, value: float):
-        self._quality = min(1.0, max(0.0, value))
+    @factors.setter
+    def factors(self, value: dict):
+        self._factors = value
 
     def __str__(self):
-        tag = self._major
+        tags = []
         if self._minor != '':
-            tag += self._separator + self._minor
-        if self._quality != 1.0:
-            tag += f";q={self._quality}"
-        return tag
+            tags.append(self._major + self._separator + self._minor)
+        else:
+            tags.append(self._major)
+        for key, val in self._factors.items():
+            tags.append(f"{key}={val}")
+        return ';'.join(tags)
 
 
 class MimeTypeTag(Tag):
-    def __init__(self, mime_type: str = "*", sub_type: str = "*", quality=1.0):
-        super(MimeTypeTag, self).__init__(mime_type, sub_type, '/', quality)
+    def __init__(self, mime_type: str = "*", sub_type: str = "*", **kwargs):
+        super(MimeTypeTag, self).__init__(mime_type, sub_type, '/', **kwargs)
 
 
 class LanguageTag(Tag):
-    def __init__(self, lang: str, country_code: str, quality=1.0):
-        super(LanguageTag, self).__init__(lang, country_code, '-', quality)
+    def __init__(self, lang: str, country_code: str = '', **kwargs):
+        super(LanguageTag, self).__init__(lang, country_code, '-', **kwargs)
