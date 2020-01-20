@@ -7,10 +7,9 @@ from typing import List
 
 from requests import PreparedRequest
 from requests.adapters import HTTPAdapter
-from requests.structures import CaseInsensitiveDict
 from urllib3.util.url import parse_url
 
-from spoofbot.util import request_from_entry, response_from_entry
+from spoofbot.util import request_from_entry, response_from_entry, cookie_header_to_dict
 from spoofbot.util.har import prepare_request
 
 
@@ -89,7 +88,7 @@ class HarAdapter(HTTPAdapter):
         if cached_request.method == request.method and cached_request.url == request.url:
             if self._strict_matching:
                 self._log.debug(f"{indent}Testing possible match strictly")
-                if not self._match_dict(request.headers, cached_request.headers, len(request.method)):
+                if not self._do_headers_match(request.headers, cached_request.headers, len(request.method)):
                     self._log.debug(f"{indent}Headers mismatch")
                     return False
                 if cached_request.body:
@@ -100,81 +99,61 @@ class HarAdapter(HTTPAdapter):
             return True
         return False
 
-    def _match_dict(self, request_headers: CaseInsensitiveDict, cached_headers: CaseInsensitiveDict,
-                    ljustlen: int) -> bool:
-        indent = ' ' * ljustlen
-        if request_headers is None:
-            self._log.warning(f"{indent}Request headers is None")
-            return False
-        verdict = True
+    def _do_headers_match(self, request_headers: dict, cached_headers: dict,
+                          indent_level: int) -> bool:
+        self._log.debug(' ' * indent_level + '=' * 16)
+        success = True
+        success &= self._do_keys_match(request_headers, cached_headers, indent_level)
+        success &= self._are_dicts_same(request_headers, cached_headers, indent_level, 'headers')
+        if 'Cookie' in cached_headers or 'Cookie' in request_headers:
+            request_cookies = cookie_header_to_dict(request_headers.get('Cookie', ''))
+            cached_cookies = cookie_header_to_dict(cached_headers.get('Cookie', ''))
+            success &= self._are_dicts_same(request_cookies, cached_cookies, indent_level, 'cookies')
+        return success
+
+    def _do_keys_match(self, request_headers: dict, cached_headers: dict,
+                       indent_level: int) -> bool:
+        indent = ' ' * indent_level
         if dict(request_headers).keys() != dict(cached_headers).keys():
             self._log.debug(f"{indent}Request header order does not match:")
             self._log.debug(f"{indent}  {list(dict(request_headers).keys())}")
             self._log.debug(f"{indent}  does not equal cached:")
             self._log.debug(f"{indent}  {list(dict(cached_headers).keys())}")
-            verdict = False
+            return False
+        return True
+
+    def _are_dicts_same(self, request_dict: dict, cached_dict: dict, indent_level: int,
+                        name: str) -> bool:
+        indent = ' ' * indent_level
         missing_keys = []
         mismatching_keys = []
         redundant_keys = []
-        for key in cached_headers.keys():
-            if key not in request_headers:
+        verdict = True
+        for key in cached_dict.keys():
+            if key not in request_dict:
                 missing_keys.append(key)
             else:
-                if request_headers[key] != cached_headers[key]:
-                    if key.lower() != 'cookie':
-                        mismatching_keys.append(key)
-                    else:
-                        cached_cookies = dict(map(lambda c: tuple(c.split('=')), cached_headers[key].split('; ')))
-                        request_cookies = dict(map(lambda c: tuple(c.split('=')), request_headers[key].split('; ')))
-                        missing_cookies = []
-                        mismatching_cookies = []
-                        redundant_cookies = []
-                        for cookey in cached_cookies.keys():
-                            if cookey not in request_cookies:
-                                missing_cookies.append(cookey)
-                            else:
-                                if request_cookies[cookey] != cached_cookies[cookey]:
-                                    mismatching_cookies.append(cookey)
-                        for cookey in request_cookies.keys():
-                            if cookey not in cached_cookies:
-                                redundant_cookies.append(cookey)
-                        if len(missing_cookies) > 0:
-                            self._log.debug(f"{indent}Request cookies are missing the following entries:")
-                            for cookey in missing_cookies:
-                                self._log.debug(f"{indent}  '{cookey}': '{cached_headers[cookey]}'")
-                            verdict = False
-                        if len(redundant_cookies) > 0:
-                            self._log.debug(f"{indent}Request cookies have the following redundant entries:")
-                            for cookey in redundant_cookies:
-                                self._log.debug(f"{indent}  '{cookey}': '{request_headers[cookey]}'")
-                            verdict = False
-                        if len(mismatching_cookies) > 0:
-                            self._log.debug(f"{indent}Request cookies have the following mismatching entries:")
-                            for cookey in mismatching_cookies:
-                                self._log.debug(f"{indent}  '{cookey}': '{request_headers[cookey]}'")
-                                self._log.debug(f"{indent}  {' ' * (len(cookey) + 2)}  does not equal:")
-                                self._log.debug(
-                                    f"{indent}  {' ' * (len(cookey) + 2)}  '{cached_headers[cookey]}'")
-                            verdict = False
-        for key in request_headers.keys():
-            if key not in cached_headers:
+                if request_dict[key] != cached_dict[key]:
+                    mismatching_keys.append(key)
+        for key in request_dict.keys():
+            if key not in cached_dict:
                 redundant_keys.append(key)
         if len(missing_keys) > 0:
-            self._log.debug(f"{indent}Request headers are missing the following entries:")
+            self._log.debug(f"{indent}Request {name} are missing the following entries:")
             for key in missing_keys:
-                self._log.debug(f"{indent}  '{key}': '{cached_headers[key]}'")
+                self._log.debug(f"{indent}  '{key}': '{cached_dict[key]}'")
             verdict = False
         if len(redundant_keys) > 0:
-            self._log.debug(f"{indent}Request headers have the following redundant entries:")
+            self._log.debug(f"{indent}Request {name} have the following redundant entries:")
             for key in redundant_keys:
-                self._log.debug(f"{indent}  '{key}': '{request_headers[key]}'")
+                self._log.debug(f"{indent}  '{key}': '{request_dict[key]}'")
             verdict = False
         if len(mismatching_keys) > 0:
-            self._log.debug(f"{indent}Request headers have the following mismatching entries:")
+            self._log.debug(f"{indent}Request {name} have the following mismatching entries:")
             for key in mismatching_keys:
-                self._log.debug(f"{indent}  '{key}': '{request_headers[key]}'")
-                self._log.debug(f"{indent}  {' ' * (len(key) + 2)}  does not equal:")
-                self._log.debug(f"{indent}  {' ' * (len(key) + 2)}  '{cached_headers[key]}'")
+                self._log.debug(f"{indent}  '{key}': '{request_dict[key]}'")
+                self._log.debug(f"{indent}  {' ' * (len(key) + 2)}  does not equal cached {name[:-1]}:")
+                self._log.debug(f"{indent}  {' ' * (len(key) + 2)}  '{cached_dict[key]}'")
             verdict = False
         return verdict
 

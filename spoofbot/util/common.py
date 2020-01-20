@@ -1,6 +1,6 @@
 """Common and random utilities that can be useful"""
 
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from urllib.parse import quote_plus
 
 
@@ -22,3 +22,9 @@ def dict_list_to_dict(other: List[dict]) -> dict:
     for kv in other:
         d[kv['name']] = kv['value']
     return d
+
+
+def cookie_header_to_dict(cookie: str) -> Dict[str, str]:
+    if cookie == '':
+        return {}
+    return dict(map(lambda c: tuple(c.split('=')), cookie.split('; ')))
