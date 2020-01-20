@@ -80,11 +80,7 @@ class CacheAdapterTest(unittest.TestCase):
         self.assertTrue(self.cache_adapter.would_hit("https://httpbin.org/anything", headers={'Accept': 'text/json'}))
         self.assertTrue(self.cache_adapter.would_hit("https://httpbin.org/anything", headers={'Accept': 'text/json'}))
         self.assertTrue(self.cache_adapter.would_hit("https://httpbin.org/headers", headers={'Accept': 'text/json'}))
-        self.assertListEqual(
-            [
-                '/anything2',
-                '/anything',
-                '/headers',
-            ],
-            list(map(lambda url: url.path, self.cache_adapter.list_cached("https://httpbin.org/")))
+        self.assertSetEqual(
+            {'/anything2', '/anything', '/headers'},
+            set(map(lambda url: url.path, self.cache_adapter.list_cached("https://httpbin.org/")))
         )

@@ -1,6 +1,16 @@
 """Module to clean and anonymize HAR logs"""
 import json
 import os
+import zlib
+from io import BytesIO
+
+import brotli
+from requests import Request, PreparedRequest, Session
+from requests.structures import CaseInsensitiveDict
+from urllib3 import HTTPResponse
+
+from spoofbot.adapter.common import MockHTTPResponse
+from spoofbot.util.common import dict_list_to_dict, dict_to_tuple_list
 
 
 def clean_all_in(directory: str, backup_ext: str = '.bak'):
@@ -96,6 +106,70 @@ def _anonymize_cookie(cookie: dict) -> dict:
         'httpOnly': cookie.get('httpOnly', False),
         'secure': cookie.get('secure', False),
     }
+
+
+def request_from_entry(entry: dict) -> Request:
+    request_entry = entry['request']
+    return Request(
+        method=request_entry['method'].upper(),
+        url=request_entry['url'],
+        headers=CaseInsensitiveDict(dict_list_to_dict(request_entry['headers'])),
+        files=None,
+        data={},
+        json=None,
+        params={},
+        auth=None,
+        cookies=dict_list_to_dict(request_entry['cookies']),
+        hooks=None,
+    )
+
+
+def prepare_request(request: Request) -> PreparedRequest:
+    return Session().prepare_request(request)
+
+
+def response_from_entry(entry: dict) -> HTTPResponse:
+    response_entry = entry['response']
+    headers = CaseInsensitiveDict(dict_list_to_dict(response_entry['headers']))
+    content = response_entry['content']
+    body = bytearray()
+    if 'text' in content:
+        data = content['text'].encode('utf8')
+        if 'Content-Encoding' in headers:
+            if headers['Content-Encoding'] == 'gzip':
+                compressor = zlib.compressobj(9, zlib.DEFLATED, zlib.MAX_WBITS | 16)
+                body = compressor.compress(data) + compressor.flush()
+            elif headers['Content-Encoding'] == 'br':
+                body = brotli.compress(data)
+            elif 'encoding' in content:
+                raise Exception()
+            else:
+                body = data
+        elif 'encoding' in content:
+            raise Exception()
+        else:
+            body = data
+    # if 'text' in content:
+    #     text = content['text']
+    #     if 'encoding' in content:
+    #         encoding = content['encoding']
+    #         if encoding == 'base64':
+    #             body = base64.b64decode(text)
+    #         else:
+    #             body = text.decode(encoding)
+    #     else:
+    #         body = text.encode('utf-8')
+    # else:
+    #     body = b""
+
+    tuple_headers = dict_to_tuple_list(dict(headers))
+    return HTTPResponse(
+        body=BytesIO(body),
+        headers=tuple_headers,
+        status=response_entry['status'],
+        preload_content=False,
+        original_response=MockHTTPResponse(tuple_headers)
+    )
 
 
 if __name__ == '__main__':

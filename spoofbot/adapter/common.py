@@ -18,7 +18,7 @@ class EmailMessage(message.Message):
         return re.split(b', ', self.get(value, b'', *args))
 
 
-class MockHTTPResponse():
+class MockHTTPResponse:
     def __init__(self, headers):
         h = ["%s: %s" % (k, v) for (k, v) in headers]
         h = map(coerce_content, h)

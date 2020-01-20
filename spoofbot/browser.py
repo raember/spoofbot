@@ -1,13 +1,13 @@
 import mimetypes
 import sys
 from datetime import timedelta, datetime
+from http.cookiejar import CookieJar
 from logging import Logger, getLogger
 from time import sleep
-from typing import List, Optional
+from typing import List, Optional, AnyStr, TypeVar, TextIO, Tuple, Callable, Dict
 
 import toposort as toposort
-from requests import Response, Session
-from requests.adapters import BaseAdapter
+from requests import Response, Session, Request
 from requests.compat import OrderedDict
 from urllib3.util.url import parse_url, Url
 
@@ -51,8 +51,18 @@ class OrderedHeaders(dict):
         return ((k, v) for _, k, v in sorted(s))
 
 
-class Browser:
-    """Basic model of a browser
+DictOrBytes = TypeVar('DictOrBytes', dict, bytes)
+DictOrTupleListOrBytesOrFileLike = TypeVar('DictOrTupleListOrBytesOrFileLike', dict, List[tuple], bytes, TextIO)
+DictOrCookieJar = TypeVar('DictOrCookieJar', dict, CookieJar)
+StrOrFileLike = TypeVar('StrOrFileLike', str, TextIO)
+AuthTupleOrCallable = TypeVar('AuthTupleOrCallable', Tuple[str, str], Callable)
+FloatOrTuple = TypeVar('FloatOrTuple', float, Tuple[float, float])
+StrOrBool = TypeVar('StrOrBool', str, bool)
+StrOrStrTuple = TypeVar('StrOrStrTuple', str, Tuple[str, str])
+
+
+class Browser(Session):
+    """Basic browser session
 
     Specific browsers must inherit from this class and overwrite the abstract methods
     """
@@ -66,8 +76,6 @@ class Browser:
     _upgrade_insecure_requests: bool
     _te: str
     _connection: str
-    _session: Session
-    _adapter: BaseAdapter
     _last_url: Url
     _last_request_timestamp: datetime
     _request_timeout: timedelta
@@ -76,6 +84,7 @@ class Browser:
     _did_wait: bool
 
     def __init__(self):
+        super(Browser, self).__init__()
         self._log = getLogger(self.__class__.__name__)
         self._user_agent = ''
         self._accept = []
@@ -85,8 +94,6 @@ class Browser:
         self._upgrade_insecure_requests = False
         self._te = 'Trailers'
         self._connection = 'keep-alive'
-        self._session = Session()
-        self._adapter = self._session.get_adapter('https://')
         # noinspection PyTypeChecker
         self._last_url = None
         self._last_request_timestamp = datetime(1, 1, 1)
@@ -160,26 +167,6 @@ class Browser:
         self._connection = value
 
     @property
-    def session(self) -> Session:
-        return self._session
-
-    @session.setter
-    def session(self, value: Session):
-        self._session = value
-        self._adapter = self._session.get_adapter('https://')
-
-    @property
-    def adapter(self) -> BaseAdapter:
-        return self._adapter
-
-    @adapter.setter
-    def adapter(self, value: BaseAdapter):
-        self._adapter = value
-        if self._session is not None:
-            self._session.mount('https://', self._adapter)
-            self._session.mount('http://', self._adapter)
-
-    @property
     def origin(self) -> Optional[Url]:
         if self._last_url is None:
             return None
@@ -243,114 +230,85 @@ class Browser:
         self._last_url = parse_url(response.url)
         return response
 
-    def get(self, url: Url, **kwargs) -> Response:
-        """Sends a GET request to the url
+    def request(self, method: AnyStr, url: AnyStr, params: DictOrBytes = None,
+                data: DictOrTupleListOrBytesOrFileLike = None, headers: dict = None, cookies: DictOrCookieJar = None,
+                files: StrOrFileLike = None, auth: AuthTupleOrCallable = None, timeout: FloatOrTuple = None,
+                allow_redirects=True, proxies: Dict[str, str] = None, hooks: Dict[str, Callable] = None,
+                stream: bool = None, verify: StrOrBool = None, cert: StrOrStrTuple = None,
+                json: str = None) -> Response:
+        """Constructs a :class:`Request <Request>`, prepares it and sends it.
+        Returns :class:`Response <Response>` object.
 
-        :param url: The url the browser is supposed to connect to
-        :param kwargs: Additional arguments to forward to the requests module
-        :returns: The response to the sent request
-        :rtype: Response
+        :param hooks: (optional) Dictionary mapping a hook (only 'request' is
+            possible) to a Callable.
+        :param method: method for the new :class:`Request` object.
+        :param url: URL for the new :class:`Request` object.
+        :param params: (optional) Dictionary or bytes to be sent in the query
+            string for the :class:`Request`.
+        :param data: (optional) Dictionary, list of tuples, bytes, or file-like
+            object to send in the body of the :class:`Request`.
+        :param json: (optional) json to send in the body of the
+            :class:`Request`.
+        :param headers: (optional) Dictionary of HTTP Headers to send with the
+            :class:`Request`.
+        :param cookies: (optional) Dict or CookieJar object to send with the
+            :class:`Request`.
+        :param files: (optional) Dictionary of ``'filename': file-like-objects``
+            for multipart encoding upload.
+        :param auth: (optional) Auth tuple or callable to enable
+            Basic/Digest/Custom HTTP Auth.
+        :param timeout: (optional) How long to wait for the server to send
+            data before giving up, as a float, or a :ref:`(connect timeout,
+            read timeout) <timeouts>` tuple.
+        :type timeout: float or tuple
+        :param allow_redirects: (optional) Set to True by default.
+        :type allow_redirects: bool
+        :param proxies: (optional) Dictionary mapping protocol or protocol and
+            hostname to the URL of the proxy.
+        :param stream: (optional) whether to immediately download the response
+            content. Defaults to ``False``.
+        :param verify: (optional) Either a boolean, in which case it controls whether we verify
+            the server's TLS certificate, or a string, in which case it must be a path
+            to a CA bundle to use. Defaults to ``True``.
+        :param cert: (optional) if String, path to ssl client cert file (.pem).
+            If Tuple, ('cert', 'key') pair.
+        :rtype: requests.Response
         """
-        self._session.headers = self._assemble_headers('GET', url)
-        self._session.headers.update(kwargs.setdefault('headers', {}))
-        del kwargs['headers']
+        self._report_request(method, url)
+        # Create the Request.
+        req = Request(
+            method=method.upper(),
+            url=url,
+            headers=headers,
+            files=files,
+            data=data or {},
+            json=json,
+            params=params or {},
+            auth=auth,
+            cookies=cookies,
+            hooks=hooks,
+        )
+        prep = self.prepare_request(req)
+
+        proxies = proxies or {}
+
+        settings = self.merge_environment_settings(
+            prep.url, proxies, stream, verify, cert
+        )
+
+        # Await the request timeout
         self.await_timeout()
-        self._report_request('GET', url)
-        return self._handle_response(self._session.get(url, **kwargs))
 
-    def post(self, url: Url, data: str = None, json: dict = None, **kwargs) -> Response:
-        """Sends a POST request to the url
+        # Send the request.
+        send_kwargs = {
+            'timeout': timeout,
+            'allow_redirects': allow_redirects,
+        }
+        send_kwargs.update(settings)
+        resp = self.send(prep, **send_kwargs)
 
-        :param url: The url the browser is supposed to connect to
-        :param data: Optional data string as payload to the request
-        :param json: Optional json data structure as payload to the request
-        :param kwargs: Additional arguments to forward to the requests module
-        :returns: The response to the sent request
-        :rtype: Response
-        """
-        self._session.headers = self._assemble_headers('POST', url)
-        self._session.headers.update(kwargs.setdefault('headers', {}))
-        del kwargs['headers']
-        self.await_timeout()
-        self._report_request('POST', url)
-        return self._handle_response(self._session.post(url, data, json, **kwargs))
-
-    def head(self, url: Url, **kwargs) -> Response:
-        """Sends a HEAD request to the url
-
-        :param url: The url the browser is supposed to connect to
-        :param kwargs: Additional arguments to forward to the requests module
-        :returns: The response to the sent request
-        :rtype: Response
-        """
-        self._session.headers = self._assemble_headers('HEAD', url)
-        self._session.headers.update(kwargs.setdefault('headers', {}))
-        del kwargs['headers']
-        self.await_timeout()
-        self._report_request('HEAD', url)
-        return self._handle_response(self._session.head(url, **kwargs))
-
-    def delete(self, url: Url, **kwargs) -> Response:
-        """Sends a DELETE request to the url
-
-        :param url: The url the browser is supposed to connect to
-        :param kwargs: Additional arguments to forward to the requests module
-        :returns: The response to the sent request
-        :rtype: Response
-        """
-        self._session.headers = self._assemble_headers('DELETE', url)
-        self._session.headers.update(kwargs.setdefault('headers', {}))
-        del kwargs['headers']
-        self.await_timeout()
-        self._report_request('DELETE', url)
-        return self._handle_response(self._session.delete(url, **kwargs))
-
-    def options(self, url: Url, **kwargs) -> Response:
-        """Sends a OPTIONS request to the url
-
-        :param url: The url the browser is supposed to connect to
-        :param kwargs: Additional arguments to forward to the requests module
-        :returns: The response to the sent request
-        :rtype: Response
-        """
-        self._session.headers = self._assemble_headers('OPTIONS', url)
-        self._session.headers.update(kwargs.setdefault('headers', {}))
-        del kwargs['headers']
-        self.await_timeout()
-        self._report_request('OPTIONS', url)
-        return self._handle_response(self._session.options(url, **kwargs))
-
-    def patch(self, url: Url, data: str = None, **kwargs) -> Response:
-        """Sends a PATCH request to the url
-
-        :param url: The url the browser is supposed to connect to
-        :param data: Optional data string as payload to the request
-        :param kwargs: Additional arguments to forward to the requests module
-        :returns: The response to the sent request
-        :rtype: Response
-        """
-        self._session.headers = self._assemble_headers('PATCH', url)
-        self._session.headers.update(kwargs.setdefault('headers', {}))
-        del kwargs['headers']
-        self.await_timeout()
-        self._report_request('PATCH', url)
-        return self._handle_response(self._session.patch(url, data, **kwargs))
-
-    def put(self, url: Url, data: str = None, **kwargs) -> Response:
-        """Sends a PUT request to the url
-
-        :param url: The url the browser is supposed to connect to
-        :param data: Optional data string as payload to the request
-        :param kwargs: Additional arguments to forward to the requests module
-        :returns: The response to the sent request
-        :rtype: Response
-        """
-        self._session.headers = self._assemble_headers('PUT', url)
-        self._session.headers.update(kwargs.setdefault('headers', {}))
-        del kwargs['headers']
-        self.await_timeout()
-        self._report_request('PUT', url)
-        return self._handle_response(self._session.put(url, data, **kwargs))
+        self._report_response(resp)
+        return resp
 
     def _report_request(self, method: str, url: Url):
         self._log.debug(f"\033[36m{method}\033[0m {url}")  # 36 = cyan fg
@@ -478,7 +436,8 @@ class Browser:
             return
         self._waiting_period = timedelta(seconds=0.0)
         self._did_wait = False
-        if isinstance(self._adapter, HarAdapter) or isinstance(self._adapter, FileCacheAdapter) and self._adapter.hit:
+        adapter = self.get_adapter('https://')
+        if isinstance(adapter, HarAdapter) or isinstance(adapter, FileCacheAdapter) and adapter.hit:
             self._log.debug("Last request was a hit in cache. No need to wait.")
             return
         now = datetime.now()

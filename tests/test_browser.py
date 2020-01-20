@@ -16,6 +16,7 @@ from spoofbot.util import encode_form_data
 from tests.config import resolve_path
 
 logging.basicConfig(level=logging.DEBUG)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 
 
 class WuxiaWorldTest(unittest.TestCase):
@@ -27,7 +28,9 @@ class WuxiaWorldTest(unittest.TestCase):
             MimeTypeTag("application", "xml", q=0.9),
             MimeTypeTag("*", "*", q=0.8)
         ]
-        browser.adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
+        adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
+        browser.mount('https://', adapter)
+        browser.mount('http://', adapter)
 
         browser.transfer_encoding = None
         resp = browser.navigate(parse_url('http://wuxiaworld.com/'))
@@ -125,7 +128,9 @@ class ChromeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Chrome()
-        cls.browser.adapter = HarAdapter(load_har(resolve_path('test_data/chrome_full.har')))
+        adapter = HarAdapter(load_har(resolve_path('test_data/chrome_full.har')))
+        cls.browser.mount('https://', adapter)
+        cls.browser.mount('http://', adapter)
 
     def test_01_duckduckgo(self):
         self.assertIsNotNone(self.browser.navigate(parse_url('http://www.duckduckgo.com/')))
@@ -135,7 +140,9 @@ class FirefoxTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Firefox()
-        cls.browser.adapter = HarAdapter(load_har(resolve_path('../test_data/ff_full.har')))
+        adapter = HarAdapter(load_har(resolve_path('../test_data/ff_full.har')))
+        cls.browser.mount('https://', adapter)
+        cls.browser.mount('http://', adapter)
 
     def test_01_duckduckgo(self):
         self.browser.transfer_encoding = None
