@@ -14,6 +14,7 @@ class HarProxyTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.har_adapter = HarAdapter(load_har(resolve_path('../../test_data/www.wuxiaworld.com_Archive_ALL.har')))
         cls.session = Session()
+        cls.session.headers = {}  # Session internal headers mess up header order
         cls.session.mount('http://', cls.har_adapter)
         cls.session.mount('https://', cls.har_adapter)
 

@@ -5,12 +5,12 @@ import zlib
 from io import BytesIO
 
 import brotli
-from requests import Request, PreparedRequest, Session
+from requests import Request
 from requests.structures import CaseInsensitiveDict
 from urllib3 import HTTPResponse
 
 from spoofbot.adapter.common import MockHTTPResponse
-from spoofbot.util.common import dict_list_to_dict, dict_to_tuple_list
+from spoofbot.util.common import dict_list_to_dict, dict_to_tuple_list, dict_list_to_tuple_list
 
 
 def clean_all_in(directory: str, backup_ext: str = '.bak'):
@@ -91,6 +91,7 @@ def _anonymize_entry(entry: dict) -> dict:
 
 def _anonymize_header(header: dict) -> dict:
     if header['name'].startswith(':'):  # Provisional header. Thanks, Chrome
+        # noinspection PyTypeChecker
         return None
     return {
         'name': header.get('name'),
@@ -113,7 +114,7 @@ def request_from_entry(entry: dict) -> Request:
     return Request(
         method=request_entry['method'].upper(),
         url=request_entry['url'],
-        headers=CaseInsensitiveDict(dict_list_to_dict(request_entry['headers'])),
+        headers=CaseInsensitiveDict(dict_list_to_dict(request_entry['headers'], case_insensitive=True)),
         files=None,
         data={},
         json=None,
@@ -124,22 +125,19 @@ def request_from_entry(entry: dict) -> Request:
     )
 
 
-def prepare_request(request: Request) -> PreparedRequest:
-    return Session().prepare_request(request)
-
-
 def response_from_entry(entry: dict) -> HTTPResponse:
     response_entry = entry['response']
-    headers = CaseInsensitiveDict(dict_list_to_dict(response_entry['headers']))
+    headers = dict_list_to_tuple_list(response_entry['headers'])
+    headers_set = CaseInsensitiveDict(headers)
     content = response_entry['content']
     body = bytearray()
     if 'text' in content:
         data = content['text'].encode('utf8')
-        if 'Content-Encoding' in headers:
-            if headers['Content-Encoding'] == 'gzip':
+        if 'Content-Encoding' in headers_set:
+            if headers_set['Content-Encoding'] == 'gzip':
                 compressor = zlib.compressobj(9, zlib.DEFLATED, zlib.MAX_WBITS | 16)
                 body = compressor.compress(data) + compressor.flush()
-            elif headers['Content-Encoding'] == 'br':
+            elif headers_set['Content-Encoding'] == 'br':
                 body = brotli.compress(data)
             elif 'encoding' in content:
                 raise Exception()
@@ -161,6 +159,24 @@ def response_from_entry(entry: dict) -> HTTPResponse:
     #         body = text.encode('utf-8')
     # else:
     #     body = b""
+
+    # if 'Set-Cookie' in headers_set:
+    #     altered_headers = []
+    #     if 'date' in headers_set:
+    #         date_offset = datetime.now() - datetime.strptime(headers_set['date'], '%a, %d %b %Y %H:%M:%S GMT')
+    #     else:
+    #         date_offset = timedelta()
+    #     date_format = '%a, %d-%b-%y %H:%M:%S GMT'
+    #     for k, v in headers:
+    #         if k.lower() == 'set-cookie':
+    #             cookie = str_to_dict(v)
+    #             if 'expires' in cookie:
+    #                 expiration_date = datetime.strptime(cookie['expires'], date_format)
+    #                 cookie['expires'] = (expiration_date + date_offset).strftime(date_format)
+    #             altered_headers.append((k, dict_to_str(cookie)))
+    #         else:
+    #             altered_headers.append((k, v))
+    #     headers = altered_headers
 
     tuple_headers = dict_to_tuple_list(dict(headers))
     return HTTPResponse(

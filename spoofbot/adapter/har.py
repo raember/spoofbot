@@ -3,14 +3,16 @@
 import json
 import logging
 import os
-from typing import List
+from typing import List, MutableMapping
 
-from requests import PreparedRequest
+from requests import PreparedRequest, Session, Response
 from requests.adapters import HTTPAdapter
+from requests.cookies import extract_cookies_to_jar
+from requests.structures import CaseInsensitiveDict
+from requests.utils import get_encoding_from_headers
 from urllib3.util.url import parse_url
 
-from spoofbot.util import request_from_entry, response_from_entry, cookie_header_to_dict
-from spoofbot.util.har import prepare_request
+from spoofbot.util import request_from_entry, response_from_entry, cookie_header_to_dict, TimelessRequestsCookieJar
 
 
 class HarAdapter(HTTPAdapter):
@@ -19,12 +21,17 @@ class HarAdapter(HTTPAdapter):
     _log: logging.Logger
     _strict_matching: bool = True
     _delete_after_match: bool = True
+    _session: Session
 
-    def __init__(self, har_data: dict):
+    def __init__(self, har_data: dict, session: Session = None):
         super(HarAdapter, self).__init__()
         self._log = logging.getLogger(self.__class__.__name__)
         self._data = har_data
         self._log.info(f"Using HAR file from {str(self)}")
+        if session is None:
+            session = Session()
+            session.headers = {}
+        self._session = session
 
     @property
     def creator(self) -> str:
@@ -54,12 +61,22 @@ class HarAdapter(HTTPAdapter):
     def delete_after_match(self, value: bool):
         self._delete_after_match = value
 
+    @property
+    def session(self) -> Session:
+        return self._session
+
+    @session.setter
+    def session(self, value: Session):
+        self._session = value
+
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None):
         indent = ' ' * len(request.method)
         for i, entry in enumerate(self.entries):
-            cached_request = prepare_request(request_from_entry(entry))
+            cached_request = self._session.prepare_request(request_from_entry(entry))
             if self._match_requests(request, cached_request):
                 self._log.debug(f"{indent}Request matched")
+                for key, val in request.headers.items():
+                    self._log.debug(f"{indent}  - {key}: {val}")
                 if self._delete_after_match:
                     del self._data['log']['entries'][i]  # Delete entry as we already matched it once.
                     self._log.debug(f"{indent}Deleted matched entry from list")
@@ -99,30 +116,31 @@ class HarAdapter(HTTPAdapter):
             return True
         return False
 
-    def _do_headers_match(self, request_headers: dict, cached_headers: dict,
+    def _do_headers_match(self, request_headers: CaseInsensitiveDict, cached_headers: CaseInsensitiveDict,
                           indent_level: int) -> bool:
         self._log.debug(' ' * indent_level + '=' * 16)
         success = True
         success &= self._do_keys_match(request_headers, cached_headers, indent_level)
         success &= self._are_dicts_same(request_headers, cached_headers, indent_level, 'headers')
         if 'Cookie' in cached_headers or 'Cookie' in request_headers:
+            self._log.debug(f"{' ' * indent_level}Cookies mismatch:")
             request_cookies = cookie_header_to_dict(request_headers.get('Cookie', ''))
             cached_cookies = cookie_header_to_dict(cached_headers.get('Cookie', ''))
-            success &= self._are_dicts_same(request_cookies, cached_cookies, indent_level, 'cookies')
+            success &= self._are_dicts_same(request_cookies, cached_cookies, indent_level + 2, 'cookies')
         return success
 
-    def _do_keys_match(self, request_headers: dict, cached_headers: dict,
+    def _do_keys_match(self, request_headers: CaseInsensitiveDict, cached_headers: CaseInsensitiveDict,
                        indent_level: int) -> bool:
         indent = ' ' * indent_level
-        if dict(request_headers).keys() != dict(cached_headers).keys():
+        if list(map(str.lower, dict(request_headers).keys())) != list(map(str.lower, dict(cached_headers).keys())):
             self._log.debug(f"{indent}Request header order does not match:")
-            self._log.debug(f"{indent}  {list(dict(request_headers).keys())}")
+            self._log.debug(f"{indent}  ({len(request_headers)}) {list(dict(request_headers).keys())}")
             self._log.debug(f"{indent}  does not equal cached:")
-            self._log.debug(f"{indent}  {list(dict(cached_headers).keys())}")
+            self._log.debug(f"{indent}  ({len(cached_headers)}) {list(dict(cached_headers).keys())}")
             return False
         return True
 
-    def _are_dicts_same(self, request_dict: dict, cached_dict: dict, indent_level: int,
+    def _are_dicts_same(self, request_dict: MutableMapping, cached_dict: MutableMapping, indent_level: int,
                         name: str) -> bool:
         indent = ' ' * indent_level
         missing_keys = []
@@ -133,7 +151,8 @@ class HarAdapter(HTTPAdapter):
             if key not in request_dict:
                 missing_keys.append(key)
             else:
-                if request_dict[key] != cached_dict[key]:
+                if request_dict[key] != cached_dict[key] and key not in ['Cookie',
+                                                                         'expires']:  # For cookies with altered expiration date
                     mismatching_keys.append(key)
         for key in request_dict.keys():
             if key not in cached_dict:
@@ -157,11 +176,55 @@ class HarAdapter(HTTPAdapter):
             verdict = False
         return verdict
 
+    def build_response(self, req, resp):
+        """Builds a :class:`Response <requests.Response>` object from a urllib3
+        response. This should not be called from user code, and is only exposed
+        for use when subclassing the
+        :class:`HTTPAdapter <requests.adapters.HTTPAdapter>`
+
+        :param req: The :class:`PreparedRequest <PreparedRequest>` used to generate the response.
+        :param resp: The urllib3 response object.
+        :rtype: requests.Response
+        """
+        response = Response()
+
+        cookie_jar = self.session.cookies.__new__(self.session.cookies.__class__)
+        cookie_jar.__init__()
+        if isinstance(cookie_jar, TimelessRequestsCookieJar):
+            cookie_jar.mock_date = self.session.cookies.mock_date
+
+        response.cookies = cookie_jar
+
+        # Fallback to None if there's no status_code, for whatever reason.
+        response.status_code = getattr(resp, 'status', None)
+
+        # Make headers case-insensitive.
+        response.headers = CaseInsensitiveDict(getattr(resp, 'headers', {}))
+
+        # Set encoding.
+        response.encoding = get_encoding_from_headers(response.headers)
+        response.raw = resp
+        response.reason = response.raw.reason
+
+        if isinstance(req.url, bytes):
+            response.url = req.url.decode('utf-8')
+        else:
+            response.url = req.url
+
+        # Add new cookies from the server.
+        extract_cookies_to_jar(response.cookies, req, resp)
+
+        # Give the Response some context.
+        response.request = req
+        response.connection = self
+
+        return response
+
     def __str__(self):
         version = self.creator_version
         if version != '':
-            return f"{self.creator} {version}, {len(self.entries)} Requests"
-        return f"{self.creator}, {len(self.entries)} Requests"
+            return f"HAR file, {self.creator} {version}, {len(self.entries)} Requests"
+        return f"HAR file, {self.creator}, {len(self.entries)} Requests"
 
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))

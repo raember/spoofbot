@@ -1,54 +1,72 @@
 import mimetypes
-import sys
 from datetime import timedelta, datetime
+from enum import Enum
 from http.cookiejar import CookieJar
 from logging import Logger, getLogger
 from time import sleep
 from typing import List, Optional, AnyStr, TypeVar, TextIO, Tuple, Callable, Dict
+from urllib.parse import urlparse, urljoin
 
 import toposort as toposort
-from requests import Response, Session, Request
-from requests.compat import OrderedDict
+from requests import Response, Session, Request, PreparedRequest, codes
+from requests._internal_utils import to_native_string
+from requests.cookies import extract_cookies_to_jar, merge_cookies, cookiejar_from_dict
+from requests.exceptions import ChunkedEncodingError, ContentDecodingError, TooManyRedirects
+from requests.sessions import merge_setting, merge_hooks
+from requests.structures import CaseInsensitiveDict
+from requests.utils import requote_uri, rewind_body, get_netrc_auth
 from urllib3.util.url import parse_url, Url
 
 from spoofbot.adapter import FileCacheAdapter, HarAdapter
 from spoofbot.operating_system import Windows
 from spoofbot.tag import MimeTypeTag, LanguageTag
-
-
 # Thanks, buddy
 # https://stackoverflow.com/questions/44864896/python-ordered-headers-http-requests#44865372
-class OrderedHeaders(dict):
-    # The precedence of headers is determined once. In this example,
-    # 'Accept-Encoding' must be sorted behind 'User-Agent'
-    # (if defined) and 'version' must be sorted behind both
-    # 'Accept-Encoding' and 'Connection' (if defined).
-    PRECEDENCE = toposort.toposort_flatten({
-        'User-Agent': {'Host'},
-        'Accept': {'User-Agent'},
-        'Accept-Language': {'Accept'},
-        'Accept-Encoding': {'Accept-Language'},
-        'DNT': {'Accept-Encoding'},
-        'Content-Type': {'DNT'},
-        'Content-Length': {'Content-Type'},
-        'Referer': {'Content-Length'},
-        'Origin': {'Referer'},
-        'Connection': {'Origin'},
-        'Cookie': {'Connection'},
-        'Upgrade-Insecure-Request': {'Cookie'},
-        'TE': {'Upgrade-Insecure-Request'},
-    })
+from spoofbot.util import are_same_origin, are_same_site, ReferrerPolicy, sort_dict, TimelessRequestsCookieJar
 
-    def items(self):
-        s = []
-        for k, v in dict.items(self):
-            try:
-                precedence = self.PRECEDENCE.index(k)
-            except ValueError:
-                # no defined sort for this header, so we put it behind any other sorted header
-                precedence = sys.maxsize
-            s.append((precedence, k, v))
-        return ((k, v) for _, k, v in sorted(s))
+
+class Destination(Enum):
+    AUDIO = "audio"
+    AUDIO_WORKLET = "audioworklet"
+    DOCUMENT = "document"
+    EMBED = "embed"
+    EMPTY = "empty"
+    FONT = "font"
+    IMAGE = "image"
+    MANIFEST = "manifest"
+    OBJECT = "object"
+    PAINT_WORKLET = "paintworklet"
+    REPORT = "report"
+    SCRIPT = "script"
+    SERVICE_WORKER = "serviceworker"
+    SHARED_WORKER = "sharedworker"
+    STYLE = "style"
+    TRACK = "track"
+    VIDEO = "video"
+    WORKER = "worker"
+    XSLT = "xslt"
+    NESTED_DOCUMENT = "nested-document"
+
+
+class Mode(Enum):
+    CORS = "cors"
+    NAVIGATE = "navigate"
+    NESTED_NAVIGATE = "nested-navigate"
+    NO_CORS = "no-cors"
+    SAME_ORIGIN = "same-origin"
+    WEBSOCKET = "websocket"
+
+
+class Site(Enum):
+    CROSS_SITE = "cross-site"
+    SAME_ORIGIN = "same-origin"
+    SAME_SITE = "same-site"
+    NONE = "none"
+
+
+class User(Enum):
+    USER_ACTIVATED = "?1"
+    AUTOMATIC = None
 
 
 DictOrBytes = TypeVar('DictOrBytes', dict, bytes)
@@ -76,12 +94,15 @@ class Browser(Session):
     _upgrade_insecure_requests: bool
     _te: str
     _connection: str
-    _last_url: Url
+    _last_response: Response
+    _last_navigate: Response
     _last_request_timestamp: datetime
     _request_timeout: timedelta
     _honor_timeout: bool
     _waiting_period: timedelta
     _did_wait: bool
+    _header_precedence: list
+    _referrer_policy: ReferrerPolicy
 
     def __init__(self):
         super(Browser, self).__init__()
@@ -95,12 +116,16 @@ class Browser(Session):
         self._te = 'Trailers'
         self._connection = 'keep-alive'
         # noinspection PyTypeChecker
-        self._last_url = None
+        self._last_response = None
+        # noinspection PyTypeChecker
+        self._last_navigate = None
         self._last_request_timestamp = datetime(1, 1, 1)
         self._request_timeout = timedelta(seconds=1.0)
         self._honor_timeout = True
         self._waiting_period = timedelta(seconds=0.0)
         self._did_wait = False
+        self._header_precedence = []
+        self._referrer_policy = ReferrerPolicy.NO_REFERRER_WHEN_DOWNGRADE
 
     @property
     def user_agent(self) -> str:
@@ -168,13 +193,18 @@ class Browser(Session):
 
     @property
     def origin(self) -> Optional[Url]:
-        if self._last_url is None:
+        if self._last_response is None:
             return None
-        return Url(self._last_url.scheme, host=self._last_url.host)
+        last_url = parse_url(self._last_response.url)
+        return Url(last_url.scheme, host=last_url.host)
 
     @property
-    def referer(self) -> Optional[Url]:
-        return self._last_url
+    def last_response(self) -> Optional[Response]:
+        return self._last_response
+
+    @property
+    def last_navigate(self) -> Optional[Response]:
+        return self._last_navigate
 
     @property
     def last_request_timestamp(self) -> datetime:
@@ -208,6 +238,14 @@ class Browser(Session):
     def did_wait(self) -> bool:
         return self._did_wait
 
+    @property
+    def header_precedence(self) -> list:
+        return self._header_precedence
+
+    @header_precedence.setter
+    def header_precedence(self, value: list):
+        self._header_precedence = value
+
     @staticmethod
     def create_user_agent(**kwargs) -> str:
         """Creates a user agent string according to the browsers identity.
@@ -218,7 +256,98 @@ class Browser(Session):
         """
         raise NotImplementedError
 
-    def navigate(self, url: Url, **kwargs) -> Response:
+    # noinspection DuplicatedCode
+    def _get_referer(self, url: Url) -> Optional[str]:
+        if self._last_navigate is None:
+            return None
+        nav_url = parse_url(self._last_navigate.url)
+        return self._referrer_policy.get_referrer(nav_url, url)
+
+    def _get_origin(self, method: str, url: Url) -> Optional[str]:
+        if self._last_navigate is None:
+            return None
+        nav_url = parse_url(self._last_navigate.url)
+        if not are_same_origin(nav_url, url) or method not in ['GET', 'HEAD']:
+            return self._referrer_policy.get_origin(nav_url, url)
+
+    def _get_host(self, url: Url) -> str:
+        if url.port:
+            return f"{url.hostname}:{url.port}"
+        return url.hostname
+
+    def _get_user_agent(self) -> str:
+        return self._user_agent
+
+    def _get_accept(self, url: Url) -> str:
+        mime_type, _ = mimetypes.guess_type(url.path if url.path is not None else '')
+        if mime_type is not None:
+            return mime_type
+        return ','.join(map(str, self._accept))
+
+    def _get_accept_language(self) -> str:
+        return ','.join(map(str, self._accept_language))
+
+    def _get_accept_encoding(self, url: Url) -> str:
+        _, enc = mimetypes.guess_type(url.path if url.path is not None else '')
+        if enc is not None:
+            return enc
+        return ', '.join(map(str, self._accept_encoding))
+
+    def _get_connection(self) -> Optional[str]:
+        if self._connection != '':
+            return self._connection
+
+    def _get_dnt(self) -> Optional[str]:
+        if self._dnt:
+            return '1'
+
+    def _get_upgrade_insecure_requests(self) -> Optional[str]:
+        if self._upgrade_insecure_requests:
+            return '1'
+
+    def _get_te(self) -> Optional[str]:
+        if self._te != '':
+            return self._te
+
+    def _get_sec_fetch_dest(self, dest: Destination) -> str:
+        # https://www.w3.org/TR/fetch-metadata/#sec-fetch-dest-header
+        # noinspection SpellCheckingInspection
+        if dest is None:
+            dest = Destination.EMPTY
+        # noinspection PyTypeChecker
+        return dest.value
+
+    def _get_sec_fetch_mode(self, method: str, url: Url) -> str:
+        # https://www.w3.org/TR/fetch-metadata/#sec-fetch-mode-header
+        mode = Mode.NO_CORS
+        if self._last_navigate is None:
+            mode = Mode.NAVIGATE
+            # noinspection PyTypeChecker
+            return mode.value
+        nav_url = parse_url(self._last_navigate.url)
+        if are_same_origin(url, nav_url):
+            mode = Mode.SAME_ORIGIN
+        if self._get_origin(method, url) is not None:
+            mode = Mode.CORS
+        # noinspection PyTypeChecker
+        return mode.value
+
+    def _get_sec_fetch_site(self, url: Url) -> str:
+        # https://www.w3.org/TR/fetch-metadata/#sec-fetch-site-header
+        site = Site.SAME_ORIGIN
+        if self._last_navigate is None:
+            site = Site.NONE
+            # noinspection PyTypeChecker
+            return site.value
+        nav_url = parse_url(self._last_navigate.url)
+        if not are_same_origin(url, nav_url):
+            site = Site.CROSS_SITE
+            if not are_same_site(url, nav_url):
+                site = Site.SAME_SITE
+        # noinspection PyTypeChecker
+        return site.value
+
+    def navigate(self, url: str, **kwargs) -> Response:
         """Sends a GET request to the url and sets will set it into the Referer header in subsequent requests
 
         :param url: The url the browser is supposed to connect to
@@ -226,8 +355,9 @@ class Browser(Session):
         :returns: The response to the sent request
         :rtype: Response
         """
+        kwargs.setdefault('user_activation', True)
         response = self.get(url, **kwargs)
-        self._last_url = parse_url(response.url)
+        self._last_navigate = response
         return response
 
     def request(self, method: AnyStr, url: AnyStr, params: DictOrBytes = None,
@@ -235,10 +365,12 @@ class Browser(Session):
                 files: StrOrFileLike = None, auth: AuthTupleOrCallable = None, timeout: FloatOrTuple = None,
                 allow_redirects=True, proxies: Dict[str, str] = None, hooks: Dict[str, Callable] = None,
                 stream: bool = None, verify: StrOrBool = None, cert: StrOrStrTuple = None,
-                json: str = None) -> Response:
+                json: str = None, user_activation: bool = False) -> Response:
         """Constructs a :class:`Request <Request>`, prepares it and sends it.
         Returns :class:`Response <Response>` object.
 
+        :param user_activation: (optional) Indicates that the request was user
+            initiated.
         :param hooks: (optional) Dictionary mapping a hook (only 'request' is
             possible) to a Callable.
         :param method: method for the new :class:`Request` object.
@@ -275,11 +407,16 @@ class Browser(Session):
         :rtype: requests.Response
         """
         self._report_request(method, url)
+
+        ordered_headers = self._get_default_headers(method, parse_url(url), user_activation)
+        ordered_headers.update(headers if headers else {})
+        self.headers = dict(ordered_headers.items())
+
         # Create the Request.
         req = Request(
             method=method.upper(),
             url=url,
-            headers=headers,
+            headers=self.headers,
             files=files,
             data=data or {},
             json=json,
@@ -305,12 +442,173 @@ class Browser(Session):
             'allow_redirects': allow_redirects,
         }
         send_kwargs.update(settings)
-        resp = self.send(prep, **send_kwargs)
+        response = self.send(prep, **send_kwargs)
 
-        self._report_response(resp)
-        return resp
+        self._report_response(response)
+        return response
 
-    def _report_request(self, method: str, url: Url):
+    def prepare_request(self, request):
+        """Constructs a :class:`PreparedRequest <PreparedRequest>` for
+        transmission and returns it. The :class:`PreparedRequest` has settings
+        merged from the :class:`Request <Request>` instance and those of the
+        :class:`Session`.
+
+        :param request: :class:`Request` instance to prepare with this
+            session's settings.
+        :rtype: requests.PreparedRequest
+        """
+        cookies = request.cookies or {}
+
+        # Bootstrap CookieJar.
+        if not isinstance(cookies, CookieJar):
+            cookies = cookiejar_from_dict(cookies)
+
+        # Merge with session cookies
+        cookie_jar = self.cookies.__new__(self.cookies.__class__)
+        cookie_jar.__init__()
+        if isinstance(cookie_jar, TimelessRequestsCookieJar):
+            cookie_jar.mock_date = self.cookies.mock_date
+        merged_cookies = merge_cookies(
+            merge_cookies(cookie_jar, self.cookies), cookies)
+
+        # Set environment's basic authentication if not explicitly set.
+        auth = request.auth
+        if self.trust_env and not auth and not self.auth:
+            auth = get_netrc_auth(request.url)
+
+        p = PreparedRequest()
+        p.prepare(
+            method=request.method.upper(),
+            url=request.url,
+            files=request.files,
+            data=request.data,
+            json=request.json,
+            headers=merge_setting(request.headers, self.headers, dict_class=CaseInsensitiveDict),
+            params=merge_setting(request.params, self.params),
+            auth=merge_setting(auth, self.auth),
+            cookies=merged_cookies,
+            hooks=merge_hooks(request.hooks, self.hooks),
+        )
+        p.headers = CaseInsensitiveDict(sort_dict(p.headers, self._header_precedence))
+        return p
+
+    def resolve_redirects(self, resp, req, stream=False, timeout=None,
+                          verify=True, cert=None, proxies=None, yield_requests=False, **adapter_kwargs):
+        """Receives a Response. Returns a generator of Responses or Requests."""
+
+        hist = []  # keep track of history
+
+        url = self.get_redirect_target(resp)
+        previous_fragment = urlparse(req.url).fragment
+        while url:
+            prepared_request = req.copy()
+
+            # Update history and keep track of redirects.
+            # resp.history must ignore the original request in this loop
+            hist.append(resp)
+            resp.history = hist[1:]
+
+            try:
+                # noinspection PyStatementEffect
+                resp.content  # Consume socket so it can be released
+            except (ChunkedEncodingError, ContentDecodingError, RuntimeError):
+                resp.raw.read(decode_content=False)
+
+            if len(resp.history) >= self.max_redirects:
+                raise TooManyRedirects('Exceeded %s redirects.' % self.max_redirects, response=resp)
+
+            # Release the connection back into the pool.
+            resp.close()
+
+            # Handle redirection without scheme (see: RFC 1808 Section 4)
+            if url.startswith('//'):
+                parsed_rurl = urlparse(resp.url)
+                url = '%s:%s' % (to_native_string(parsed_rurl.scheme), url)
+
+            # Normalize url case and attach previous fragment if needed (RFC 7231 7.1.2)
+            parsed = urlparse(url)
+            if parsed.fragment == '' and previous_fragment:
+                parsed = parsed._replace(fragment=previous_fragment)
+            elif parsed.fragment:
+                previous_fragment = parsed.fragment
+            url = parsed.geturl()
+
+            # Facilitate relative 'location' headers, as allowed by RFC 7231.
+            # (e.g. '/path/to/resource' instead of 'http://domain.tld/path/to/resource')
+            # Compliant with RFC3986, we percent encode the url.
+            if not parsed.netloc:
+                url = urljoin(resp.url, requote_uri(url))
+            else:
+                url = requote_uri(url)
+
+            prepared_request.url = to_native_string(url)
+
+            self.rebuild_method(prepared_request, resp)
+
+            # https://github.com/requests/requests/issues/1084
+            if resp.status_code not in (codes.temporary_redirect, codes.permanent_redirect):
+                # https://github.com/requests/requests/issues/3490
+                purged_headers = ('Content-Length', 'Content-Type', 'Transfer-Encoding')
+                for header in purged_headers:
+                    prepared_request.headers.pop(header, None)
+                prepared_request.body = None
+
+            headers = prepared_request.headers
+            try:
+                del headers['Cookie']
+            except KeyError:
+                pass
+
+            self._adapt_redirection(prepared_request)
+
+            # Extract any cookies sent on the response to the cookiejar
+            # in the new request. Because we've mutated our copied prepared
+            # request, use the old one that we haven't yet touched.
+            extract_cookies_to_jar(prepared_request._cookies, req, resp.raw)
+            merge_cookies(prepared_request._cookies, self.cookies)
+            prepared_request.prepare_cookies(prepared_request._cookies)
+
+            # Rebuild auth and proxy information.
+            proxies = self.rebuild_proxies(prepared_request, proxies)
+            self.rebuild_auth(prepared_request, resp)
+
+            # A failed tell() sets `_body_position` to `object()`. This non-None
+            # value ensures `rewindable` will be True, allowing us to raise an
+            # UnrewindableBodyError, instead of hanging the connection.
+            rewindable = (
+                    prepared_request._body_position is not None and
+                    ('Content-Length' in headers or 'Transfer-Encoding' in headers)
+            )
+
+            # Attempt to rewind consumed file-like object.
+            if rewindable:
+                rewind_body(prepared_request)
+
+            # Override the original request.
+            req = prepared_request
+
+            if yield_requests:
+                yield req
+            else:
+
+                resp = self.send(
+                    req,
+                    stream=stream,
+                    timeout=timeout,
+                    verify=verify,
+                    cert=cert,
+                    proxies=proxies,
+                    allow_redirects=False,
+                    **adapter_kwargs
+                )
+
+                extract_cookies_to_jar(self.cookies, prepared_request, resp.raw)
+
+                # extract redirect url, if any, for the next loop
+                url = self.get_redirect_target(resp)
+                yield resp
+
+    def _report_request(self, method: str, url: str):
         self._log.debug(f"\033[36m{method}\033[0m {url}")  # 36 = cyan fg
 
     def _report_response(self, response: Response):
@@ -386,43 +684,32 @@ class Browser(Session):
         self._log.debug(f"{' ' * len(response.request.method)} \033[{color}m← {response.status_code} {msg}\033[0m "
                         f"{response.headers.get('Content-Type', '-')}")
 
-    def _assemble_headers(self, method: str, url: Url) -> dict:
-        """Assembles the headers for the next request
+    def _get_default_headers(self, method: str, url: Url, user_activation: bool) -> CaseInsensitiveDict:
+        """Provides the default headers the browser should send when connecting to an endpoint
 
         The method tries to guess the mimetype and encoding to fill the Accept and Accept-Encoding headers
         :param method: The method of the HTTP request
         :param url: The url the browser is supposed to connect to
-        :returns: The assembled and merged headers
-        :rtype: OrderedDict
-        """
-        headers = self._get_default_headers(url)
-        mime_type, enc = mimetypes.guess_type(url.path if url.path is not None else '')
-        if mime_type is not None:
-            headers['Accept'] = mime_type
-            if enc:
-                headers['Accept-Encoding'] = enc
-        if self._last_url is not None:
-            headers.setdefault('Referer', self._last_url.url)
-        headers.setdefault('TE', self._te)
-        # else:
-        #     headers['Accept-Encoding'] = ', '.join(['gzip', 'deflate'])
-        if self.origin is not None and self.origin.hostname == url.hostname and method != 'GET':
-            headers.setdefault('Origin', self.origin.url)
-        return headers
-
-    def _get_default_headers(self, url: Url) -> OrderedHeaders:
-        """Provides the default headers the browser should send when connecting to an unknown url
-
-        :param url: The url the browser is supposed to connect to
         :returns: A dictionary form of the default headers.
         :rtype: OrderedHeaders
         """
-        raise NotImplementedError
+        return CaseInsensitiveDict({
+            'Host': self._get_host(url),
+            'User-Agent': self._get_user_agent(),
+            'Accept': self._get_accept(url),
+            'Accept-Language': self._get_accept_language(),
+            'Accept-Encoding': self._get_accept_encoding(url),
+            'Connection': self._get_connection(),
+            'Origin': self._get_origin(method, url),
+            'Referer': self._get_referer(url),
+            'DNT': self._get_dnt(),
+            'Upgrade-Insecure-Requests': self._get_upgrade_insecure_requests(),
+            'TE': self._get_te(),
+        })
 
     def _handle_response(self, response: Response) -> Response:
         self._last_request_timestamp = datetime.now()
-        if response.history:  # In case of redirect
-            self._last_url = parse_url(response.url)
+        self._last_response = response
         self._report_response(response)
         return response
 
@@ -448,16 +735,15 @@ class Browser(Session):
             self._log.debug(f"Waiting for {self._waiting_period.total_seconds()} seconds.")
             sleep(self._waiting_period.total_seconds())
 
+    def _adapt_redirection(self, request: PreparedRequest):
+        pass
+
 
 class Firefox(Browser):
     def __init__(self,
                  os=Windows(),
                  ff_version=(72, 0),
                  build_id=20100101,
-                 lang=(
-                         LanguageTag("en", "US"),
-                         LanguageTag("en", q=0.5)
-                 ),
                  do_not_track=False,
                  upgrade_insecure_requests=True):
         super(Firefox, self).__init__()
@@ -469,11 +755,29 @@ class Firefox(Browser):
             MimeTypeTag("image", "webp"),
             MimeTypeTag("*", "*", q=0.8)
         ]
-        self._accept_language = list(lang)
+        self._accept_language = [
+            LanguageTag("en", "US"),
+            LanguageTag("en", q=0.5)
+        ]
         self._accept_encoding = ['gzip', 'deflate', 'br']
         self._dnt = do_not_track
         self._upgrade_insecure_requests = upgrade_insecure_requests
         self._connection = 'keep-alive'
+        self._header_precedence = toposort.toposort_flatten({
+            'User-Agent': {'Host'},
+            'Accept': {'User-Agent'},
+            'Accept-Language': {'Accept'},
+            'Accept-Encoding': {'Accept-Language'},
+            'DNT': {'Accept-Encoding'},
+            'Content-Type': {'DNT'},
+            'Referer': {'Content-Type'},
+            'Origin': {'Referer'},
+            'Connection': {'Origin'},
+            'Cookie': {'Connection'},
+            'Upgrade-Insecure-Requests': {'Cookie'},
+            'TE': {'Upgrade-Insecure-Requests'},
+            'Content-Length': {'TE'},
+        })
 
     @staticmethod
     def create_user_agent(os=Windows(), version=(71, 0), build_id=20100101) -> str:
@@ -489,32 +793,12 @@ class Firefox(Browser):
                f"Gecko/{build_id} " \
                f"Firefox/{ff_version}"
 
-    def _get_default_headers(self, url: Url) -> OrderedHeaders:
-        headers = OrderedHeaders({
-            'Host': url.hostname,
-            'User-Agent': self._user_agent,
-            'Accept': ','.join(map(str, self._accept)),
-            'Accept-Language': ','.join(map(str, self._accept_language)),
-            'Accept-Encoding': ', '.join(map(str, self._accept_encoding))
-        })
-        if self._connection != '':
-            headers['Connection'] = self._connection
-        if self._dnt:
-            headers['DNT'] = '1'
-        if self._upgrade_insecure_requests:
-            headers['Upgrade-Insecure-Requests'] = '1'
-        return headers
-
 
 class Chrome(Browser):
     def __init__(self,
                  os=Windows(),
                  chrome_version=(79, 0, 3945, 130),
                  webkit_version=(537, 36),
-                 lang=(
-                         LanguageTag("en", "US"),
-                         LanguageTag("en", q=0.9)
-                 ),
                  do_not_track=False,
                  upgrade_insecure_requests=True):
         super(Chrome, self).__init__()
@@ -528,11 +812,33 @@ class Chrome(Browser):
             MimeTypeTag(q=0.8),
             MimeTypeTag("application", "signed-exchange", v='b3', q=0.9),
         ]
-        self._accept_language = list(lang)
+        self._accept_language = [
+            LanguageTag("en", "US"),
+            LanguageTag("en", q=0.9)
+        ]
         self._accept_encoding = ['gzip', 'deflate', 'br']
         self._dnt = do_not_track
         self._upgrade_insecure_requests = upgrade_insecure_requests
         self._connection = 'keep-alive'
+        self._header_precedence = toposort.toposort_flatten({
+            'Connection': {'Host'},
+            'Content-Type': {'Connection'},
+            # 'Content-Length': {'Content-Type'},
+            'Upgrade-Insecure-Requests': {'Content-Type'},
+            'User-Agent': {'Upgrade-Insecure-Requests'},
+            'Sec-Fetch-User': {'User-Agent'},
+            'Accept': {'Sec-Fetch-User'},
+            'Origin': {'Accept'},
+            'Sec-Fetch-Site': {'Origin'},
+            'Sec-Fetch-Mode': {'Sec-Fetch-Site'},
+            'Referer': {'Sec-Fetch-Mode'},
+            'Accept-Encoding': {'Referer'},
+            'Accept-Language': {'Accept-Encoding'},
+
+            # 'DNT': {'Sec-Fetch-Mode'},
+            # 'Cookie': {'Referer'},
+            # 'TE': {'Cookie'},
+        })
 
     @staticmethod
     def create_user_agent(os=Windows(), version=(79, 0, 3945, 130), webkit_version=(537, 36)) -> str:
@@ -549,21 +855,41 @@ class Chrome(Browser):
                f"Chrome/{'.'.join(map(str, version))} " \
                f"Safari/{webkit_ver}"
 
-    def _get_default_headers(self, url: Url) -> OrderedHeaders:
-        headers = OrderedHeaders({
-            'Host': url.hostname,
-            'User-Agent': self._user_agent,
-            'Accept': ','.join(map(str, self._accept)),
-            'Accept-Language': ','.join(map(str, self._accept_language)),
-            'Accept-Encoding': ', '.join(map(str, self._accept_encoding))
-        })
-        if self._dnt:
-            headers['DNT'] = '1'
-        if self._upgrade_insecure_requests:
-            headers['Upgrade-Insecure-Requests'] = '1'
-        if self._connection != '':
-            headers['Connection'] = self._connection
+    def navigate(self, url: str, **kwargs) -> Response:
+        if parse_url(url).scheme == 'https':
+            kwargs.setdefault('headers', {}).setdefault('Sec-Fetch-User', '?1')
+            kwargs.setdefault('headers', {}).setdefault('Sec-Fetch-Mode', 'navigate')
+        response = self.get(url, **kwargs)
+        self._last_navigate = response
+        return response
+
+    def _get_default_headers(self, method: str, url: Url, user_activation: bool) -> CaseInsensitiveDict:
+        adjust_accept_encoding = self._last_navigate is None
+        if adjust_accept_encoding:
+            self._accept_encoding = ['gzip', 'deflate']
+        headers = super(Chrome, self)._get_default_headers(method, url, user_activation)
+        if adjust_accept_encoding:
+            self._accept_encoding = ['gzip', 'deflate', 'br']
+        if url.scheme == 'https':
+            headers['Sec-Fetch-Site'] = self._get_sec_fetch_site(url)
+            headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(method, url)
         return headers
+
+    def _adapt_redirection(self, request: PreparedRequest):
+        url = parse_url(request.url)
+        if 'Host' in request.headers:
+            del request.headers['Host']
+        if 'Connection' in request.headers:
+            del request.headers['Connection']
+        if 'Accept-Encoding' in request.headers:
+            request.headers['Accept-Encoding'] = self._get_accept_encoding(url)
+        if url.scheme == 'https':
+            request.headers['Sec-Fetch-Site'] = self._get_sec_fetch_site(url)
+            if self._last_navigate is None:
+                request.headers['Sec-Fetch-Mode'] = 'navigate'
+            else:
+                request.headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(request.method, url)
+        request.headers = CaseInsensitiveDict(sort_dict(request.headers, self._header_precedence))
 
 # def build_chromium_user_agent(
 #         os=Linux(),

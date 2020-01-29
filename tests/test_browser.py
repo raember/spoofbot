@@ -1,42 +1,50 @@
 import json
 import logging
 import unittest
+from datetime import datetime
 from io import BytesIO
 
 import PIL
 from PIL.Image import Image
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-from urllib3.util import parse_url
+from requests import Response
 
 from spoofbot import Firefox, Chrome, MimeTypeTag
 from spoofbot import Windows, MacOSX, Linux
 from spoofbot.adapter import load_har, HarAdapter
-from spoofbot.util import encode_form_data
+from spoofbot.util import encode_form_data, TimelessRequestsCookieJar
 from tests.config import resolve_path
 
 logging.basicConfig(level=logging.DEBUG)
+# noinspection SpellCheckingInspection
 logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
+# noinspection SpellCheckingInspection
+logging.getLogger('chardet.charsetprober').setLevel(logging.INFO)
 
 
 class WuxiaWorldTest(unittest.TestCase):
     def test_FF(self):
         browser = Firefox(ff_version=(71, 0))
+        browser.cookies = TimelessRequestsCookieJar(datetime(2019, 12, 21, 12, 0, 0))
         browser._accept = [
             MimeTypeTag("text", "html"),
             MimeTypeTag("application", "xhtml+xml"),
             MimeTypeTag("application", "xml", q=0.9),
             MimeTypeTag("*", "*", q=0.8)
         ]
+        # browser.accept_encoding = ['gzip', 'deflate']
         adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
+        adapter.session = browser
         browser.mount('https://', adapter)
         browser.mount('http://', adapter)
 
-        browser.transfer_encoding = None
-        resp = browser.navigate(parse_url('http://wuxiaworld.com/'))
+        browser.transfer_encoding = 'Trailers'
+        # browser.accept_encoding = ['gzip', 'deflate', 'br']
+        resp = browser.navigate('https://www.wuxiaworld.com/')
         self.assertEqual(200, resp.status_code)
 
-        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/account/login'))
+        resp = browser.navigate('https://www.wuxiaworld.com/account/login')
         self.assertEqual(200, resp.status_code)
 
         with open(resolve_path('../test_data/ww_auth.json'), 'r') as fp:
@@ -51,15 +59,15 @@ class WuxiaWorldTest(unittest.TestCase):
             ('__RequestVerificationToken', rvt_input.get('value')),
             ('RememberMe', 'false')
         ]
-        resp = browser.post(parse_url('https://www.wuxiaworld.com/account/login'), headers={
+        resp = browser.post('https://www.wuxiaworld.com/account/login', headers={
             'Content-Type': 'application/x-www-form-urlencoded'
         }, data=encode_form_data(data))
         self.assertEqual(200, resp.status_code)
 
-        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/profile/karma'))
+        resp = browser.navigate('https://www.wuxiaworld.com/profile/karma')
         self.assertEqual(200, resp.status_code)
 
-        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/profile/missions'))
+        resp = browser.navigate('https://www.wuxiaworld.com/profile/missions')
         self.assertEqual(200, resp.status_code)
 
         doc = BeautifulSoup(resp.text, features="html.parser")
@@ -69,23 +77,23 @@ class WuxiaWorldTest(unittest.TestCase):
             ('Type', 'Login'),
             ('__RequestVerificationToken', rvt_input.get('value')),
         ]
-        resp = browser.post(parse_url('https://www.wuxiaworld.com/profile/missions'), headers={
+        resp = browser.post('https://www.wuxiaworld.com/profile/missions', headers={
             'Content-Type': 'application/x-www-form-urlencoded'
         }, data=encode_form_data(data))
         self.assertEqual(200, resp.status_code)
 
         browser.upgrade_insecure_requests = False
-        resp = browser.post(parse_url('https://www.wuxiaworld.com/account/logout'), headers={
+        resp = browser.post('https://www.wuxiaworld.com/account/logout', headers={
             'Accept': 'application/json, text/plain, */*',
         }, data='')
         self.assertEqual(200, resp.status_code)
 
         browser.upgrade_insecure_requests = True
-        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/novels'))
+        resp = browser.navigate('https://www.wuxiaworld.com/novels')
         self.assertEqual(200, resp.status_code)
 
         browser.upgrade_insecure_requests = False
-        resp = browser.post(parse_url('https://www.wuxiaworld.com/api/novels/search'), headers={
+        resp = browser.post('https://www.wuxiaworld.com/api/novels/search', headers={
             'Accept': 'application/json, text/plain, */*',
             'Content-Type': 'application/json;charset=utf-8',
         }, data=json.dumps({
@@ -101,12 +109,12 @@ class WuxiaWorldTest(unittest.TestCase):
         self.assertEqual(200, resp.status_code)
 
         browser.upgrade_insecure_requests = True
-        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/novel/battle-through-the-heavens'))
+        resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens')
         self.assertEqual(200, resp.status_code)
 
         browser.upgrade_insecure_requests = False
         resp = browser.get(
-            parse_url('https://cdn.wuxiaworld.com/images/covers/btth.jpg?ver=b49ecfeb59e7f8a1e94379b5bfa58828e70883a4'),
+            'https://cdn.wuxiaworld.com/images/covers/btth.jpg?ver=b49ecfeb59e7f8a1e94379b5bfa58828e70883a4',
             headers={
                 'Accept': 'image/webp,*/*',
                 'TE': None,
@@ -117,10 +125,10 @@ class WuxiaWorldTest(unittest.TestCase):
         self.assertEqual(277, img.height)
 
         browser.upgrade_insecure_requests = True
-        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-1'))
+        resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-1')
         self.assertEqual(200, resp.status_code)
 
-        resp = browser.navigate(parse_url('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-2'))
+        resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-2')
         self.assertEqual(200, resp.status_code)
 
 
@@ -131,9 +139,175 @@ class ChromeTest(unittest.TestCase):
         adapter = HarAdapter(load_har(resolve_path('test_data/chrome_full.har')))
         cls.browser.mount('https://', adapter)
         cls.browser.mount('http://', adapter)
+        cls.duckduckgo_navigate = Response()
+        cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
+        cls.httpbin_navigate = Response()
+        cls.httpbin_navigate.url = 'https://httpbin.org/'
 
     def test_01_duckduckgo(self):
-        self.assertIsNotNone(self.browser.navigate(parse_url('http://www.duckduckgo.com/')))
+        self.browser.transfer_encoding = None
+        self.assertIsNotNone(self.browser.navigate('http://www.duckduckgo.com/'))
+
+    def test_02_duckduckgo_search(self):
+        self.browser.transfer_encoding = ''
+        self.browser.connection = ''
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.duckduckgo_navigate
+        headers = {
+            'Accept': '*/*',
+            'Host': None,
+            'Sec-Fetch-Mode': 'no-cors'
+        }
+        self.assertIsNotNone(self.browser.get(
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=h&kl=wt-wt&_=1579391036112',
+            headers=headers
+        ))
+        self.assertIsNotNone(self.browser.get(
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=ht&kl=wt-wt&_=1579391036113',
+            headers=headers
+        ))
+        self.assertIsNotNone(self.browser.get(
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=htt&kl=wt-wt&_=1579391036114',
+            headers=headers
+        ))
+        self.assertIsNotNone(self.browser.get(
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=http&kl=wt-wt&_=1579391036115',
+            headers=headers
+        ))
+        self.assertIsNotNone(self.browser.get(
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=httpb&kl=wt-wt&_=1579391036116',
+            headers=headers
+        ))
+        self.assertIsNotNone(self.browser.get(
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=httpbin&kl=wt-wt&_=1579391036117',
+            headers=headers
+        ))
+
+    def test_03_duckduckgo_httpbin(self):
+        self.browser.upgrade_insecure_requests = True
+        self.browser.connection = ''
+        self.browser._last_navigate = self.duckduckgo_navigate
+        self.assertIsNotNone(self.browser.get('https://duckduckgo.com/?q=httpbin&t=h_', headers={
+            'Host': None,
+            'Sec-Fetch-User': '?1',
+            'Sec-Fetch-Mode': 'navigate',
+        }))
+
+    def test_04_httpbin(self):
+        self.browser.transfer_encoding = None
+        self.browser.connection = 'keep-alive'
+        self.browser.upgrade_insecure_requests = True
+        self.browser._last_navigate = self.duckduckgo_navigate
+        self.assertIsNotNone(self.browser.navigate('https://httpbin.org/', headers={
+            'Origin': None,
+            'Sec-Fetch-Site': 'cross-site',
+        }))
+
+    def test_05_httpbin_delete(self):  # Had to add Content-Length header to HAR
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        self.assertIsNotNone(
+            self.browser.delete('https://httpbin.org/delete', headers={
+                'Accept': 'application/json',
+                'Sec-Fetch-Mode': 'cors',
+            }))
+
+    def test_06_httpbin_get(self):
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        self.assertIsNotNone(
+            self.browser.get('https://httpbin.org/get', headers={
+                'Accept': 'application/json',
+                'Sec-Fetch-Mode': 'cors',
+            }))
+
+    def test_07_httpbin_patch(self):  # Had to add Content-Length header to HAR
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        self.assertIsNotNone(
+            self.browser.patch('https://httpbin.org/patch', headers={'Accept': 'application/json'}))
+
+    def test_08_httpbin_post(self):  # Had to add Content-Length header to HAR
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        self.assertIsNotNone(
+            self.browser.post('https://httpbin.org/post', headers={'Accept': 'application/json'}))
+
+    def test_09_httpbin_put(self):  # Had to add Content-Length header to HAR
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        self.assertIsNotNone(
+            self.browser.put('https://httpbin.org/put', headers={'Accept': 'application/json'}))
+
+    def test_10_httpbin_basic_auth(self):
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        self.assertIsNotNone(self.browser.get('https://httpbin.org/basic-auth/admin/password', headers={
+            'Accept': 'application/json',
+            'Sec-Fetch-Mode': 'cors',
+            # 'Authorization': 'Basic YWRtaW46cGFzc3dvcmQ=',
+        }))
+
+    def test_11_httpbin_status_200(self):
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/status/200', headers={
+            'Accept': 'text/plain',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+        self.assertEqual(200, response.status_code)
+
+    def test_12_httpbin_status_300(self):
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/status/300', headers={
+            'Accept': 'text/plain',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+        self.assertEqual(300, response.status_code)
+
+    def test_13_httpbin_status_400(self):
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/status/400', headers={
+            'Accept': 'text/plain',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+        self.assertEqual(400, response.status_code)
+
+    def test_14_httpbin_status_500(self):
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/status/500', headers={
+            'Accept': 'text/plain',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+        self.assertEqual(500, response.status_code)
+
+    def test_15_httpbin_brotli(self):
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/brotli', headers={
+            'Accept': 'application/json',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+        self.assertTrue(response.json()['brotli'])
 
 
 class FirefoxTest(unittest.TestCase):
@@ -143,101 +317,96 @@ class FirefoxTest(unittest.TestCase):
         adapter = HarAdapter(load_har(resolve_path('../test_data/ff_full.har')))
         cls.browser.mount('https://', adapter)
         cls.browser.mount('http://', adapter)
+        cls.duckduckgo_navigate = Response()
+        cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
+        cls.httpbin_navigate = Response()
+        cls.httpbin_navigate.url = 'https://httpbin.org/'
 
     def test_01_duckduckgo(self):
         self.browser.transfer_encoding = None
-        self.assertIsNotNone(self.browser.navigate(parse_url('https://duckduckgo.com/')))
+        self.assertIsNotNone(self.browser.navigate('https://duckduckgo.com/'))
 
     def test_02_duckduckgo_search(self):
         self.browser.transfer_encoding = 'Trailers'
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://duckduckgo.com/')
+        self.browser._last_navigate = self.duckduckgo_navigate
         headers = {'Accept': '*/*'}
         self.assertIsNotNone(self.browser.get(
-            parse_url('https://duckduckgo.com/ac/?callback=autocompleteCallback&q=h&kl=wt-wt&_=1579378231414'),
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=h&kl=wt-wt&_=1579378231414',
             headers=headers
         ))
         self.assertIsNotNone(self.browser.get(
-            parse_url('https://duckduckgo.com/ac/?callback=autocompleteCallback&q=ht&kl=wt-wt&_=1579378231415'),
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=ht&kl=wt-wt&_=1579378231415',
             headers=headers
         ))
         self.assertIsNotNone(self.browser.get(
-            parse_url('https://duckduckgo.com/ac/?callback=autocompleteCallback&q=htt&kl=wt-wt&_=1579378231416'),
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=htt&kl=wt-wt&_=1579378231416',
             headers=headers
         ))
         self.assertIsNotNone(self.browser.get(
-            parse_url('https://duckduckgo.com/ac/?callback=autocompleteCallback&q=http&kl=wt-wt&_=1579378231417'),
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=http&kl=wt-wt&_=1579378231417',
             headers=headers
         ))
         self.assertIsNotNone(self.browser.get(
-            parse_url('https://duckduckgo.com/ac/?callback=autocompleteCallback&q=httpb&kl=wt-wt&_=1579378231418'),
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=httpb&kl=wt-wt&_=1579378231418',
             headers=headers
         ))
         self.assertIsNotNone(self.browser.get(
-            parse_url('https://duckduckgo.com/ac/?callback=autocompleteCallback&q=httpbin&kl=wt-wt&_=1579378231419'),
+            'https://duckduckgo.com/ac/?callback=autocompleteCallback&q=httpbin&kl=wt-wt&_=1579378231419',
             headers=headers
         ))
 
     def test_03_duckduckgo_httpbin(self):
         self.browser.upgrade_insecure_requests = True
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://duckduckgo.com/')
-        self.assertIsNotNone(self.browser.get(parse_url('https://duckduckgo.com/?q=httpbin&t=h_')))
+        self.browser._last_navigate = self.duckduckgo_navigate
+        self.assertIsNotNone(self.browser.get('https://duckduckgo.com/?q=httpbin&t=h_'))
 
     def test_04_httpbin(self):
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = True
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://duckduckgo.com/')
-        self.assertIsNotNone(self.browser.navigate(parse_url('https://httpbin.org/')))
+        self.browser._last_navigate = self.duckduckgo_navigate
+        self.assertIsNotNone(self.browser.navigate('https://httpbin.org/', headers={'Origin': None}))
 
     def test_05_httpbin_delete(self):  # Had to add Content-Length header to HAR
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
+        self.browser._last_navigate = self.httpbin_navigate
         self.assertIsNotNone(
-            self.browser.delete(parse_url('https://httpbin.org/delete'), headers={'Accept': 'application/json'}))
+            self.browser.delete('https://httpbin.org/delete', headers={'Accept': 'application/json'}))
 
     def test_06_httpbin_get(self):
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
+        self.browser._last_navigate = self.httpbin_navigate
         self.assertIsNotNone(
-            self.browser.get(parse_url('https://httpbin.org/get'), headers={'Accept': 'application/json'}))
+            self.browser.get('https://httpbin.org/get', headers={'Accept': 'application/json'}))
 
     def test_07_httpbin_patch(self):  # Had to add Content-Length header to HAR
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
+        self.browser._last_navigate = self.httpbin_navigate
         self.assertIsNotNone(
-            self.browser.patch(parse_url('https://httpbin.org/patch'), headers={'Accept': 'application/json'}))
+            self.browser.patch('https://httpbin.org/patch', headers={'Accept': 'application/json'}))
 
     def test_08_httpbin_post(self):  # Had to add Content-Length header to HAR
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
+        self.browser._last_navigate = self.httpbin_navigate
         self.assertIsNotNone(
-            self.browser.post(parse_url('https://httpbin.org/post'), headers={'Accept': 'application/json'}))
+            self.browser.post('https://httpbin.org/post', headers={'Accept': 'application/json'}))
 
     def test_09_httpbin_put(self):  # Had to add Content-Length header to HAR
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
+        self.browser._last_navigate = self.httpbin_navigate
         self.assertIsNotNone(
-            self.browser.put(parse_url('https://httpbin.org/put'), headers={'Accept': 'application/json'}))
+            self.browser.put('https://httpbin.org/put', headers={'Accept': 'application/json'}))
 
     def test_10_httpbin_basic_auth(self):
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
-        self.assertIsNotNone(self.browser.get(parse_url('https://httpbin.org/basic-auth/admin/password'), headers={
+        self.browser._last_navigate = self.httpbin_navigate
+        self.assertIsNotNone(self.browser.get('https://httpbin.org/basic-auth/admin/password', headers={
             'Accept': 'application/json',
             'Authorization': 'Basic YWRtaW46cGFzc3dvcmQ=',
         }))
@@ -245,45 +414,40 @@ class FirefoxTest(unittest.TestCase):
     def test_11_httpbin_status_200(self):
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
-        response = self.browser.get(parse_url('https://httpbin.org/status/200'), headers={'Accept': 'text/plain'})
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/status/200', headers={'Accept': 'text/plain'})
         self.assertIsNotNone(response)
         self.assertEqual(200, response.status_code)
 
     def test_12_httpbin_status_300(self):
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
-        response = self.browser.get(parse_url('https://httpbin.org/status/300'), headers={'Accept': 'text/plain'})
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/status/300', headers={'Accept': 'text/plain'})
         self.assertIsNotNone(response)
         self.assertEqual(300, response.status_code)
 
     def test_13_httpbin_status_400(self):
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
-        response = self.browser.get(parse_url('https://httpbin.org/status/400'), headers={'Accept': 'text/plain'})
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/status/400', headers={'Accept': 'text/plain'})
         self.assertIsNotNone(response)
         self.assertEqual(400, response.status_code)
 
     def test_14_httpbin_status_500(self):
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
-        response = self.browser.get(parse_url('https://httpbin.org/status/500'), headers={'Accept': 'text/plain'})
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/status/500', headers={'Accept': 'text/plain'})
         self.assertIsNotNone(response)
         self.assertEqual(500, response.status_code)
 
     def test_15_httpbin_brotli(self):
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
-        if not self.browser._last_url:
-            self.browser._last_url = parse_url('https://httpbin.org/')
-        response = self.browser.get(parse_url('https://httpbin.org/brotli'), headers={'Accept': 'application/json'})
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/brotli', headers={'Accept': 'application/json'})
         self.assertIsNotNone(response)
         self.assertTrue(response.json()['brotli'])
 
