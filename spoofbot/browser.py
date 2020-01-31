@@ -7,7 +7,6 @@ from time import sleep
 from typing import List, Optional, AnyStr, TypeVar, TextIO, Tuple, Callable, Dict
 from urllib.parse import urlparse, urljoin
 
-import toposort as toposort
 from requests import Response, Session, Request, PreparedRequest, codes
 from requests._internal_utils import to_native_string
 from requests.cookies import extract_cookies_to_jar, merge_cookies, cookiejar_from_dict
@@ -270,6 +269,7 @@ class Browser(Session):
         if not are_same_origin(nav_url, url) or method not in ['GET', 'HEAD']:
             return self._referrer_policy.get_origin(nav_url, url)
 
+    # noinspection PyMethodMayBeStatic
     def _get_host(self, url: Url) -> str:
         if url.port:
             return f"{url.hostname}:{url.port}"
@@ -291,7 +291,10 @@ class Browser(Session):
         _, enc = mimetypes.guess_type(url.path if url.path is not None else '')
         if enc is not None:
             return enc
-        return ', '.join(map(str, self._accept_encoding))
+        encodings = self._accept_encoding.copy()
+        if url.scheme != 'https' and 'br' in encodings:
+            encodings.remove('br')
+        return ', '.join(encodings)
 
     def _get_connection(self) -> Optional[str]:
         if self._connection != '':
@@ -305,10 +308,11 @@ class Browser(Session):
         if self._upgrade_insecure_requests:
             return '1'
 
-    def _get_te(self) -> Optional[str]:
-        if self._te != '':
+    def _get_te(self, url: Url) -> Optional[str]:
+        if url.scheme == 'https' and self._te != '':
             return self._te
 
+    # noinspection PyMethodMayBeStatic
     def _get_sec_fetch_dest(self, dest: Destination) -> str:
         # https://www.w3.org/TR/fetch-metadata/#sec-fetch-dest-header
         # noinspection SpellCheckingInspection
@@ -408,9 +412,8 @@ class Browser(Session):
         """
         self._report_request(method, url)
 
-        ordered_headers = self._get_default_headers(method, parse_url(url), user_activation)
-        ordered_headers.update(headers if headers else {})
-        self.headers = dict(ordered_headers.items())
+        self.headers = self._get_default_headers(method, parse_url(url), user_activation)
+        self.headers.update(headers if headers else {})
 
         # Create the Request.
         req = Request(
@@ -426,6 +429,8 @@ class Browser(Session):
             hooks=hooks,
         )
         prep = self.prepare_request(req)
+
+        prep.headers = CaseInsensitiveDict(sort_dict(prep.headers, self._header_precedence))
 
         proxies = proxies or {}
 
@@ -444,6 +449,8 @@ class Browser(Session):
         send_kwargs.update(settings)
         response = self.send(prep, **send_kwargs)
 
+        self._last_request_timestamp = datetime.now()
+        self._last_response = response
         self._report_response(response)
         return response
 
@@ -501,6 +508,7 @@ class Browser(Session):
         url = self.get_redirect_target(resp)
         previous_fragment = urlparse(req.url).fragment
         while url:
+            self._report_response(resp)
             prepared_request = req.copy()
 
             # Update history and keep track of redirects.
@@ -522,12 +530,14 @@ class Browser(Session):
 
             # Handle redirection without scheme (see: RFC 1808 Section 4)
             if url.startswith('//'):
+                # noinspection SpellCheckingInspection
                 parsed_rurl = urlparse(resp.url)
                 url = '%s:%s' % (to_native_string(parsed_rurl.scheme), url)
 
             # Normalize url case and attach previous fragment if needed (RFC 7231 7.1.2)
             parsed = urlparse(url)
             if parsed.fragment == '' and previous_fragment:
+                # noinspection PyProtectedMember
                 parsed = parsed._replace(fragment=previous_fragment)
             elif parsed.fragment:
                 previous_fragment = parsed.fragment
@@ -553,19 +563,48 @@ class Browser(Session):
                     prepared_request.headers.pop(header, None)
                 prepared_request.body = None
 
-            headers = prepared_request.headers
+            parsed_url = parse_url(url)
+            headers = dict(prepared_request.headers)
+            if 'Accept-Encoding' in headers:
+                headers['Accept-Encoding'] = self._get_accept_encoding(parsed_url)
+
+            te = self._get_te(parsed_url)
+            if 'TE' in headers and te is None:
+                del headers['TE']
+            elif te is not None:
+                headers['TE'] = te
+
+            uir = self._get_upgrade_insecure_requests()
+            if 'Upgrade-Insecure-Requests' in headers and uir is None:
+                del headers['Upgrade-Insecure-Requests']
+            elif uir is not None:
+                headers['Upgrade-Insecure-Requests'] = uir
+
+            if 'Host' in headers:
+                headers['Host'] = parsed_url.hostname
+
+            origin = self._get_origin(prepared_request.method, parsed_url)
+            if 'Origin' in headers and origin is None:
+                del headers['Origin']
+            elif origin is not None:
+                headers['Origin'] = origin
             try:
                 del headers['Cookie']
             except KeyError:
                 pass
+
+            prepared_request.headers = headers
 
             self._adapt_redirection(prepared_request)
 
             # Extract any cookies sent on the response to the cookiejar
             # in the new request. Because we've mutated our copied prepared
             # request, use the old one that we haven't yet touched.
+            # noinspection PyProtectedMember
             extract_cookies_to_jar(prepared_request._cookies, req, resp.raw)
+            # noinspection PyProtectedMember
             merge_cookies(prepared_request._cookies, self.cookies)
+            # noinspection PyProtectedMember
             prepared_request.prepare_cookies(prepared_request._cookies)
 
             # Rebuild auth and proxy information.
@@ -575,6 +614,7 @@ class Browser(Session):
             # A failed tell() sets `_body_position` to `object()`. This non-None
             # value ensures `rewindable` will be True, allowing us to raise an
             # UnrewindableBodyError, instead of hanging the connection.
+            # noinspection PyProtectedMember
             rewindable = (
                     prepared_request._body_position is not None and
                     ('Content-Length' in headers or 'Transfer-Encoding' in headers)
@@ -585,7 +625,9 @@ class Browser(Session):
                 rewind_body(prepared_request)
 
             # Override the original request.
+            prepared_request.headers = dict(sort_dict(prepared_request.headers, self._header_precedence))
             req = prepared_request
+            self._report_request(req.method, req.url)
 
             if yield_requests:
                 yield req
@@ -606,6 +648,7 @@ class Browser(Session):
 
                 # extract redirect url, if any, for the next loop
                 url = self.get_redirect_target(resp)
+                self._last_navigate = resp
                 yield resp
 
     def _report_request(self, method: str, url: str):
@@ -704,14 +747,8 @@ class Browser(Session):
             'Referer': self._get_referer(url),
             'DNT': self._get_dnt(),
             'Upgrade-Insecure-Requests': self._get_upgrade_insecure_requests(),
-            'TE': self._get_te(),
+            'TE': self._get_te(url),
         })
-
-    def _handle_response(self, response: Response) -> Response:
-        self._last_request_timestamp = datetime.now()
-        self._last_response = response
-        self._report_response(response)
-        return response
 
     def await_timeout(self):
         """Waits until the request timeout expires.
@@ -763,21 +800,22 @@ class Firefox(Browser):
         self._dnt = do_not_track
         self._upgrade_insecure_requests = upgrade_insecure_requests
         self._connection = 'keep-alive'
-        self._header_precedence = toposort.toposort_flatten({
-            'User-Agent': {'Host'},
-            'Accept': {'User-Agent'},
-            'Accept-Language': {'Accept'},
-            'Accept-Encoding': {'Accept-Language'},
-            'DNT': {'Accept-Encoding'},
-            'Content-Type': {'DNT'},
-            'Referer': {'Content-Type'},
-            'Origin': {'Referer'},
-            'Connection': {'Origin'},
-            'Cookie': {'Connection'},
-            'Upgrade-Insecure-Requests': {'Cookie'},
-            'TE': {'Upgrade-Insecure-Requests'},
-            'Content-Length': {'TE'},
-        })
+        self._header_precedence = [
+            'Host',
+            'User-Agent',
+            'Accept',
+            'Accept-Language',
+            'Accept-Encoding',
+            'DNT',
+            'Content-Type',
+            'Content-Length',
+            'Origin',
+            'Connection',
+            'Referer',
+            'Cookie',
+            'Upgrade-Insecure-Requests',
+            'TE',
+        ]
 
     @staticmethod
     def create_user_agent(os=Windows(), version=(71, 0), build_id=20100101) -> str:
@@ -820,25 +858,25 @@ class Chrome(Browser):
         self._dnt = do_not_track
         self._upgrade_insecure_requests = upgrade_insecure_requests
         self._connection = 'keep-alive'
-        self._header_precedence = toposort.toposort_flatten({
-            'Connection': {'Host'},
-            'Content-Type': {'Connection'},
-            # 'Content-Length': {'Content-Type'},
-            'Upgrade-Insecure-Requests': {'Content-Type'},
-            'User-Agent': {'Upgrade-Insecure-Requests'},
-            'Sec-Fetch-User': {'User-Agent'},
-            'Accept': {'Sec-Fetch-User'},
-            'Origin': {'Accept'},
-            'Sec-Fetch-Site': {'Origin'},
-            'Sec-Fetch-Mode': {'Sec-Fetch-Site'},
-            'Referer': {'Sec-Fetch-Mode'},
-            'Accept-Encoding': {'Referer'},
-            'Accept-Language': {'Accept-Encoding'},
-
-            # 'DNT': {'Sec-Fetch-Mode'},
-            # 'Cookie': {'Referer'},
-            # 'TE': {'Cookie'},
-        })
+        self._header_precedence = [
+            'Host',
+            'Connection',
+            'Content-Type',
+            # 'Content-Length',
+            'Upgrade-Insecure-Requests',
+            'User-Agent',
+            'Sec-Fetch-User',
+            'Accept',
+            'Origin',
+            'Sec-Fetch-Site',
+            'Sec-Fetch-Mode',
+            'Referer',
+            'Accept-Encoding',
+            'Accept-Language',
+            # 'DNT',
+            # 'Cookie',
+            # 'TE',
+        ]
 
     @staticmethod
     def create_user_agent(os=Windows(), version=(79, 0, 3945, 130), webkit_version=(537, 36)) -> str:

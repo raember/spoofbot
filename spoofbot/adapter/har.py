@@ -10,7 +10,6 @@ from requests.adapters import HTTPAdapter
 from requests.cookies import extract_cookies_to_jar
 from requests.structures import CaseInsensitiveDict
 from requests.utils import get_encoding_from_headers
-from urllib3.util.url import parse_url
 
 from spoofbot.util import request_from_entry, response_from_entry, cookie_header_to_dict, TimelessRequestsCookieJar
 
@@ -19,8 +18,11 @@ class HarAdapter(HTTPAdapter):
     """An adapter to be registered in a Session.."""
     _data: dict = None
     _log: logging.Logger
-    _strict_matching: bool = True
-    _delete_after_match: bool = True
+    _match_header_order: bool = True
+    _match_headers: bool = True
+    _match_data: bool = True
+    _delete_after_matching: bool = True
+    _encode_post_data: bool = False
     _session: Session
 
     def __init__(self, har_data: dict, session: Session = None):
@@ -30,7 +32,7 @@ class HarAdapter(HTTPAdapter):
         self._log.info(f"Using HAR file from {str(self)}")
         if session is None:
             session = Session()
-            session.headers = {}
+            session.headers.clear()
         self._session = session
 
     @property
@@ -46,20 +48,44 @@ class HarAdapter(HTTPAdapter):
         return self._data['log']['entries']
 
     @property
-    def strict_matching(self) -> bool:
-        return self._strict_matching
+    def match_header_order(self) -> bool:
+        return self._match_header_order
 
-    @strict_matching.setter
-    def strict_matching(self, value: bool):
-        self._strict_matching = value
+    @match_header_order.setter
+    def match_header_order(self, value: bool):
+        self._match_header_order = value
 
     @property
-    def delete_after_match(self) -> bool:
-        return self._delete_after_match
+    def match_headers(self) -> bool:
+        return self._match_headers
 
-    @delete_after_match.setter
-    def delete_after_match(self, value: bool):
-        self._delete_after_match = value
+    @match_headers.setter
+    def match_headers(self, value: bool):
+        self._match_headers = value
+
+    @property
+    def match_data(self) -> bool:
+        return self._match_data
+
+    @match_data.setter
+    def match_data(self, value: bool):
+        self._match_data = value
+
+    @property
+    def delete_after_matching(self) -> bool:
+        return self._delete_after_matching
+
+    @delete_after_matching.setter
+    def delete_after_matching(self, value: bool):
+        self._delete_after_matching = value
+
+    @property
+    def encode_post_data(self) -> bool:
+        return self._encode_post_data
+
+    @encode_post_data.setter
+    def encode_post_data(self, value: bool):
+        self._encode_post_data = value
 
     @property
     def session(self) -> Session:
@@ -72,71 +98,62 @@ class HarAdapter(HTTPAdapter):
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None):
         indent = ' ' * len(request.method)
         for i, entry in enumerate(self.entries):
-            cached_request = self._session.prepare_request(request_from_entry(entry))
+            cached_request = self._session.prepare_request(request_from_entry(entry, self._encode_post_data))
             if self._match_requests(request, cached_request):
                 self._log.debug(f"{indent}Request matched")
                 for key, val in request.headers.items():
-                    self._log.debug(f"{indent}  - {key}: {val}")
-                if self._delete_after_match:
-                    del self._data['log']['entries'][i]  # Delete entry as we already matched it once.
-                    self._log.debug(f"{indent}Deleted matched entry from list")
-                json_response = entry['response']
-                if json_response['redirectURL'] != '':
-                    if json_response['redirectURL'].startswith('/'):
-                        url = parse_url(request.url)
-                        url = parse_url(f"{url.scheme}://{url.hostname}{json_response['redirectURL']}")
+                    if key == 'Cookie':
+                        self._log.debug(f"{indent}  - {key}:")
+                        for c_key, c_val in cookie_header_to_dict(val).items():
+                            self._log.debug(f"{indent}      - {c_key}: {c_val}")
                     else:
-                        url = parse_url(json_response['redirectURL'])
-                    self._log.debug(f"{indent}Handling redirection to {url}")
-                    # if url.hostname is not None:
-                    #     request.headers['Host'] = url.hostname
-                    # if 'Origin' in request.headers:
-                    #     del request.headers['Origin']  # no Origin header for fetch requests, since redirect
-                    # if url.scheme == 'https':
-                    #     request.headers['accept-encoding'] = ', '.join(['gzip', 'deflate', 'br'])
-                    #     if 'TE' not in request.headers:
-                    #         request.headers['TE'] = 'Trailers'
+                        self._log.debug(f"{indent}  - {key}: {val}")
+                if self._delete_after_matching:
+                    del self.entries[i]  # Delete entry as we already matched it once.
+                    self._log.debug(f"{indent}Deleted matched entry from list")
                 response = self.build_response(request, response_from_entry(entry))
                 return response
+            self._session.prepare_request(request_from_entry(entry, self._encode_post_data))
         raise Exception("No matching entry in HAR found")
 
-    def _match_requests(self, request: PreparedRequest, cached_request: PreparedRequest) -> bool:
-        indent = ' ' * len(request.method)
-        if cached_request.method == request.method and cached_request.url == request.url:
-            if self._strict_matching:
-                self._log.debug(f"{indent}Testing possible match strictly")
-                if not self._do_headers_match(request.headers, cached_request.headers, len(request.method)):
-                    self._log.debug(f"{indent}Headers mismatch")
-                    return False
-                if cached_request.body:
-                    if cached_request.body != request.body:
-                        self._log.debug(
-                            f"{indent}Post data mismatch:\n{request.body}\n!=\n{cached_request.body}")
-                        return False
-            return True
-        return False
+    def _print_diff(self, name: str, expected: str, actual: str, indent_level: int):
+        indent = ' ' * indent_level
+        self._log.debug(f"{indent}Request {name} does not match:")
+        self._log.debug(f"{indent}  {actual}")
+        self._log.debug(f"{indent}  does not equal expected:")
+        self._log.debug(f"{indent}  {expected}")
 
-    def _do_headers_match(self, request_headers: CaseInsensitiveDict, cached_headers: CaseInsensitiveDict,
-                          indent_level: int) -> bool:
-        self._log.debug(' ' * indent_level + '=' * 16)
-        success = True
-        success &= self._do_keys_match(request_headers, cached_headers, indent_level)
-        success &= self._are_dicts_same(request_headers, cached_headers, indent_level, 'headers')
-        if 'Cookie' in cached_headers or 'Cookie' in request_headers:
-            self._log.debug(f"{' ' * indent_level}Cookies mismatch:")
-            request_cookies = cookie_header_to_dict(request_headers.get('Cookie', ''))
-            cached_cookies = cookie_header_to_dict(cached_headers.get('Cookie', ''))
-            success &= self._are_dicts_same(request_cookies, cached_cookies, indent_level + 2, 'cookies')
-        return success
+    def _match_requests(self, request: PreparedRequest, cached_request: PreparedRequest) -> bool:
+        indent_level = len(request.method)
+        indent = ' ' * indent_level
+        if cached_request.method == request.method and cached_request.url == request.url:
+            success = True
+            if self._match_header_order:
+                success &= self._do_keys_match(request.headers, cached_request.headers, indent_level)
+            if self._match_headers:
+                success &= self._are_dicts_same(request.headers, cached_request.headers, indent_level, 'headers')
+                if 'Cookie' in cached_request.headers or 'Cookie' in request.headers:
+                    request_cookies = cookie_header_to_dict(request.headers.get('Cookie', ''))
+                    cached_cookies = cookie_header_to_dict(cached_request.headers.get('Cookie', ''))
+                    success &= self._are_dicts_same(request_cookies, cached_cookies, indent_level + 2, 'cookies')
+            if self._match_data and cached_request.body:
+                if cached_request.body != request.body:
+                    success = False
+                    self._print_diff('data', cached_request.body, request.body, indent_level)
+            if not success:
+                self._log.debug(indent + '=' * 16)  # To easily distinguish multiple tested requests
+            return success
+        return False
 
     def _do_keys_match(self, request_headers: CaseInsensitiveDict, cached_headers: CaseInsensitiveDict,
                        indent_level: int) -> bool:
-        indent = ' ' * indent_level
         if list(map(str.lower, dict(request_headers).keys())) != list(map(str.lower, dict(cached_headers).keys())):
-            self._log.debug(f"{indent}Request header order does not match:")
-            self._log.debug(f"{indent}  ({len(request_headers)}) {list(dict(request_headers).keys())}")
-            self._log.debug(f"{indent}  does not equal cached:")
-            self._log.debug(f"{indent}  ({len(cached_headers)}) {list(dict(cached_headers).keys())}")
+            self._print_diff(
+                'data',
+                f"({len(cached_headers)}) {', '.join(list(dict(cached_headers).keys()))}",
+                f"({len(request_headers)}) {', '.join(list(dict(request_headers).keys()))}",
+                indent_level
+            )
             return False
         return True
 
@@ -151,8 +168,8 @@ class HarAdapter(HTTPAdapter):
             if key not in request_dict:
                 missing_keys.append(key)
             else:
-                if request_dict[key] != cached_dict[key] and key not in ['Cookie',
-                                                                         'expires']:  # For cookies with altered expiration date
+                if request_dict[key] != cached_dict[key] and key not in ['Cookie', 'expires']:
+                    # For cookies with altered expiration date
                     mismatching_keys.append(key)
         for key in request_dict.keys():
             if key not in cached_dict:
@@ -160,19 +177,19 @@ class HarAdapter(HTTPAdapter):
         if len(missing_keys) > 0:
             self._log.debug(f"{indent}Request {name} are missing the following entries:")
             for key in missing_keys:
-                self._log.debug(f"{indent}  '{key}': '{cached_dict[key]}'")
+                self._log.debug(f"{indent}  - '{key}': '{cached_dict[key]}'")
             verdict = False
         if len(redundant_keys) > 0:
             self._log.debug(f"{indent}Request {name} have the following redundant entries:")
             for key in redundant_keys:
-                self._log.debug(f"{indent}  '{key}': '{request_dict[key]}'")
+                self._log.debug(f"{indent}  - '{key}': '{request_dict[key]}'")
             verdict = False
         if len(mismatching_keys) > 0:
             self._log.debug(f"{indent}Request {name} have the following mismatching entries:")
             for key in mismatching_keys:
-                self._log.debug(f"{indent}  '{key}': '{request_dict[key]}'")
-                self._log.debug(f"{indent}  {' ' * (len(key) + 2)}  does not equal cached {name[:-1]}:")
-                self._log.debug(f"{indent}  {' ' * (len(key) + 2)}  '{cached_dict[key]}'")
+                self._log.debug(f"{indent}  - '{key}': '{request_dict[key]}'")
+                self._log.debug(f"{indent}    {' ' * (len(key) + 2)}  does not equal expected {name[:-1]}:")
+                self._log.debug(f"{indent}    {' ' * (len(key) + 2)}  '{cached_dict[key]}'")
             verdict = False
         return verdict
 

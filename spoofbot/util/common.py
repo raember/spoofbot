@@ -41,17 +41,6 @@ def dict_list_to_tuple_list(other: List[dict], case_insensitive: bool = False) -
     return tuples
 
 
-def str_to_dict(s: str, sep: str = '; ', eq: str = '=') -> dict:
-    d = {}
-    for tag in s.split(sep):
-        if eq in tag:
-            k, v = tag.split(eq)
-            d[k] = v
-        else:
-            d[tag] = None
-    return d
-
-
 def dict_to_str(d: dict, sep: str = '; ', eq: str = '=') -> str:
     strings = []
     for k, v in d.items():
@@ -66,10 +55,15 @@ def header_to_snake_case(string: str) -> str:
     return '-'.join(map(lambda w: w.capitalize() if not w.isupper() else w, string.split('-')))
 
 
-def cookie_header_to_dict(cookie: str) -> Dict[str, str]:
-    if cookie == '':
-        return {}
-    return dict(map(lambda c: tuple(c.split('=')), cookie.split('; ')))
+def cookie_header_to_dict(cookie: str, sep: str = '; ', eq: str = '=') -> Dict[str, str]:
+    d = {}
+    for tag in cookie.split(sep):
+        if eq in tag:
+            k, v = tag.split(eq)
+            d[k] = v
+        else:
+            d[tag] = None
+    return d
 
 
 class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
@@ -87,6 +81,13 @@ class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
         self._now = value.timestamp()
         self._policy._now = value.timestamp()
         self._timedelta = (datetime.now() - value).total_seconds()
+
+    def copy(self):
+        """Return a copy of this RequestsCookieJar."""
+        new_cj = TimelessRequestsCookieJar(self.mock_date)
+        new_cj.set_policy(self.get_policy())
+        new_cj.update(self)
+        return new_cj
 
     def add_cookie_header(self, request):
         """Add correct Cookie: header to request (urllib.request.Request object).

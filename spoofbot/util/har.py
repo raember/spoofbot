@@ -2,6 +2,7 @@
 import json
 import os
 import zlib
+from base64 import b64decode
 from io import BytesIO
 
 import brotli
@@ -10,7 +11,7 @@ from requests.structures import CaseInsensitiveDict
 from urllib3 import HTTPResponse
 
 from spoofbot.adapter.common import MockHTTPResponse
-from spoofbot.util.common import dict_list_to_dict, dict_to_tuple_list, dict_list_to_tuple_list
+from spoofbot.util.common import dict_list_to_dict, dict_list_to_tuple_list, encode_form_data
 
 
 def clean_all_in(directory: str, backup_ext: str = '.bak'):
@@ -109,16 +110,24 @@ def _anonymize_cookie(cookie: dict) -> dict:
     }
 
 
-def request_from_entry(entry: dict) -> Request:
+def request_from_entry(entry: dict, encode: bool = False) -> Request:
     request_entry = entry['request']
+    params = {}
+    data = {}
+    if 'postData' in request_entry:
+        post_data = dict_list_to_tuple_list(request_entry['postData']['params'], case_insensitive=False)
+        if encode:
+            data = encode_form_data(post_data)
+        else:
+            data = '&'.join(map('='.join, post_data))
     return Request(
         method=request_entry['method'].upper(),
         url=request_entry['url'],
         headers=CaseInsensitiveDict(dict_list_to_dict(request_entry['headers'], case_insensitive=True)),
         files=None,
-        data={},
+        data=data,
         json=None,
-        params={},
+        params=params,
         auth=None,
         cookies=dict_list_to_dict(request_entry['cookies']),
         hooks=None,
@@ -144,7 +153,11 @@ def response_from_entry(entry: dict) -> HTTPResponse:
             else:
                 body = data
         elif 'encoding' in content:
-            raise Exception()
+            encoding = content['encoding']
+            if encoding == 'base64':
+                body = b64decode(data)
+            else:
+                raise Exception()
         else:
             body = data
     # if 'text' in content:
@@ -178,13 +191,12 @@ def response_from_entry(entry: dict) -> HTTPResponse:
     #             altered_headers.append((k, v))
     #     headers = altered_headers
 
-    tuple_headers = dict_to_tuple_list(dict(headers))
     return HTTPResponse(
         body=BytesIO(body),
-        headers=tuple_headers,
+        headers=headers,
         status=response_entry['status'],
         preload_content=False,
-        original_response=MockHTTPResponse(tuple_headers)
+        original_response=MockHTTPResponse(headers)
     )
 
 

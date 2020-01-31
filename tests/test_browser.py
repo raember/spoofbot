@@ -21,30 +21,35 @@ logging.basicConfig(level=logging.DEBUG)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 # noinspection SpellCheckingInspection
 logging.getLogger('chardet.charsetprober').setLevel(logging.INFO)
+# noinspection SpellCheckingInspection
+logging.getLogger('chardet.universaldetector').setLevel(logging.INFO)
 
 
 class WuxiaWorldTest(unittest.TestCase):
-    def test_FF(self):
-        browser = Firefox(ff_version=(71, 0))
-        browser.cookies = TimelessRequestsCookieJar(datetime(2019, 12, 21, 12, 0, 0))
-        browser._accept = [
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.browser = Firefox(ff_version=(71, 0))
+        cls.browser.cookies = TimelessRequestsCookieJar(datetime(2019, 12, 21, 12, 0, 0))
+        cls.browser._accept = [
             MimeTypeTag("text", "html"),
             MimeTypeTag("application", "xhtml+xml"),
             MimeTypeTag("application", "xml", q=0.9),
             MimeTypeTag("*", "*", q=0.8)
         ]
-        # browser.accept_encoding = ['gzip', 'deflate']
-        adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
-        adapter.session = browser
-        browser.mount('https://', adapter)
-        browser.mount('http://', adapter)
+        cls.adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
+        # adapter.session = cls.browser
+        # adapter.session = Session()
+        # adapter.session.headers.clear()
+        cls.browser.mount('https://', cls.adapter)
+        cls.browser.mount('http://', cls.adapter)
 
-        browser.transfer_encoding = 'Trailers'
-        # browser.accept_encoding = ['gzip', 'deflate', 'br']
-        resp = browser.navigate('https://www.wuxiaworld.com/')
+    def test_01_main_site(self):
+        self.browser.transfer_encoding = 'Trailers'
+        resp = self.browser.navigate('http://wuxiaworld.com/')
         self.assertEqual(200, resp.status_code)
 
-        resp = browser.navigate('https://www.wuxiaworld.com/account/login')
+    def test_02_login(self):
+        resp = self.browser.navigate('https://www.wuxiaworld.com/account/login')
         self.assertEqual(200, resp.status_code)
 
         with open(resolve_path('../test_data/ww_auth.json'), 'r') as fp:
@@ -59,15 +64,20 @@ class WuxiaWorldTest(unittest.TestCase):
             ('__RequestVerificationToken', rvt_input.get('value')),
             ('RememberMe', 'false')
         ]
-        resp = browser.post('https://www.wuxiaworld.com/account/login', headers={
+        self.adapter.match_header_order = False
+        self.adapter.encode_post_data = True
+        resp = self.browser.post('https://www.wuxiaworld.com/account/login', headers={
             'Content-Type': 'application/x-www-form-urlencoded'
-        }, data=encode_form_data(data))
+        }, data=data)
+        self.assertEqual(200, resp.status_code)
+        self.adapter.encode_post_data = False
+
+    def test_03_claim_karma(self):
+        self.adapter.match_header_order = True
+        resp = self.browser.navigate('https://www.wuxiaworld.com/profile/karma')
         self.assertEqual(200, resp.status_code)
 
-        resp = browser.navigate('https://www.wuxiaworld.com/profile/karma')
-        self.assertEqual(200, resp.status_code)
-
-        resp = browser.navigate('https://www.wuxiaworld.com/profile/missions')
+        resp = self.browser.navigate('https://www.wuxiaworld.com/profile/missions')
         self.assertEqual(200, resp.status_code)
 
         doc = BeautifulSoup(resp.text, features="html.parser")
@@ -77,23 +87,28 @@ class WuxiaWorldTest(unittest.TestCase):
             ('Type', 'Login'),
             ('__RequestVerificationToken', rvt_input.get('value')),
         ]
-        resp = browser.post('https://www.wuxiaworld.com/profile/missions', headers={
+        self.adapter.match_header_order = False
+        resp = self.browser.post('https://www.wuxiaworld.com/profile/missions', headers={
             'Content-Type': 'application/x-www-form-urlencoded'
         }, data=encode_form_data(data))
         self.assertEqual(200, resp.status_code)
 
-        browser.upgrade_insecure_requests = False
-        resp = browser.post('https://www.wuxiaworld.com/account/logout', headers={
+    def test_04_logout(self):
+        self.browser.upgrade_insecure_requests = False
+        resp = self.browser.post('https://www.wuxiaworld.com/account/logout', headers={
             'Accept': 'application/json, text/plain, */*',
         }, data='')
         self.assertEqual(200, resp.status_code)
+        self.adapter.match_header_order = True
 
-        browser.upgrade_insecure_requests = True
-        resp = browser.navigate('https://www.wuxiaworld.com/novels')
+    def test_05_novels(self):
+        self.browser.upgrade_insecure_requests = True
+        resp = self.browser.navigate('https://www.wuxiaworld.com/novels')
         self.assertEqual(200, resp.status_code)
 
-        browser.upgrade_insecure_requests = False
-        resp = browser.post('https://www.wuxiaworld.com/api/novels/search', headers={
+    def test_06_search(self):
+        self.browser.upgrade_insecure_requests = False
+        resp = self.browser.post('https://www.wuxiaworld.com/api/novels/search', headers={
             'Accept': 'application/json, text/plain, */*',
             'Content-Type': 'application/json;charset=utf-8',
         }, data=json.dumps({
@@ -108,27 +123,31 @@ class WuxiaWorldTest(unittest.TestCase):
         }, separators=(',', ':')))
         self.assertEqual(200, resp.status_code)
 
-        browser.upgrade_insecure_requests = True
-        resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens')
+    def test_07_btth(self):
+        self.browser.upgrade_insecure_requests = True
+        resp = self.browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens')
         self.assertEqual(200, resp.status_code)
 
-        browser.upgrade_insecure_requests = False
-        resp = browser.get(
+    def test_08_btth_cover(self):
+        self.browser.upgrade_insecure_requests = False
+        resp = self.browser.get(
             'https://cdn.wuxiaworld.com/images/covers/btth.jpg?ver=b49ecfeb59e7f8a1e94379b5bfa58828e70883a4',
             headers={
                 'Accept': 'image/webp,*/*',
                 'TE': None,
+                'Origin': None,
             })
         self.assertEqual(200, resp.status_code)
         img: Image = PIL.Image.open(BytesIO(resp.content))
         self.assertEqual(208, img.width)
         self.assertEqual(277, img.height)
 
-        browser.upgrade_insecure_requests = True
-        resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-1')
+    def test_09_chapters_1_and_2(self):
+        self.browser.upgrade_insecure_requests = True
+        resp = self.browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-1')
         self.assertEqual(200, resp.status_code)
 
-        resp = browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-2')
+        resp = self.browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens/btth-chapter-2')
         self.assertEqual(200, resp.status_code)
 
 
@@ -136,16 +155,17 @@ class ChromeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Chrome()
-        adapter = HarAdapter(load_har(resolve_path('test_data/chrome_full.har')))
-        cls.browser.mount('https://', adapter)
-        cls.browser.mount('http://', adapter)
+        cls.adapter = HarAdapter(load_har(resolve_path('test_data/chrome_full.har')))
+        cls.browser.mount('https://', cls.adapter)
+        cls.browser.mount('http://', cls.adapter)
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()
         cls.httpbin_navigate.url = 'https://httpbin.org/'
 
     def test_01_duckduckgo(self):
-        self.browser.transfer_encoding = None
+        self.browser.transfer_encoding = ''
+        self.browser.upgrade_insecure_requests = True
         self.assertIsNotNone(self.browser.navigate('http://www.duckduckgo.com/'))
 
     def test_02_duckduckgo_search(self):
@@ -204,6 +224,7 @@ class ChromeTest(unittest.TestCase):
         }))
 
     def test_05_httpbin_delete(self):  # Had to add Content-Length header to HAR
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -214,6 +235,7 @@ class ChromeTest(unittest.TestCase):
             }))
 
     def test_06_httpbin_get(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -224,6 +246,7 @@ class ChromeTest(unittest.TestCase):
             }))
 
     def test_07_httpbin_patch(self):  # Had to add Content-Length header to HAR
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -231,6 +254,7 @@ class ChromeTest(unittest.TestCase):
             self.browser.patch('https://httpbin.org/patch', headers={'Accept': 'application/json'}))
 
     def test_08_httpbin_post(self):  # Had to add Content-Length header to HAR
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -238,6 +262,7 @@ class ChromeTest(unittest.TestCase):
             self.browser.post('https://httpbin.org/post', headers={'Accept': 'application/json'}))
 
     def test_09_httpbin_put(self):  # Had to add Content-Length header to HAR
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -245,6 +270,7 @@ class ChromeTest(unittest.TestCase):
             self.browser.put('https://httpbin.org/put', headers={'Accept': 'application/json'}))
 
     def test_10_httpbin_basic_auth(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -255,6 +281,7 @@ class ChromeTest(unittest.TestCase):
         }))
 
     def test_11_httpbin_status_200(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -266,6 +293,7 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
 
     def test_12_httpbin_status_300(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -277,6 +305,7 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(300, response.status_code)
 
     def test_13_httpbin_status_400(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -288,6 +317,7 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(400, response.status_code)
 
     def test_14_httpbin_status_500(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -299,6 +329,7 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(500, response.status_code)
 
     def test_15_httpbin_brotli(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -307,16 +338,219 @@ class ChromeTest(unittest.TestCase):
             'Sec-Fetch-Mode': 'cors',
         })
         self.assertIsNotNone(response)
-        self.assertTrue(response.json()['brotli'])
+
+    def test_16_httpbin_deflate(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/deflate', headers={
+            'Accept': 'application/json',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_17_httpbin_deny(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/deny', headers={
+            'Accept': 'text/plain',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_18_httpbin_encoding_utf8(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/encoding/utf8', headers={
+            'Accept': 'text/html',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_19_httpbin_gzip(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/gzip', headers={
+            'Accept': 'application/json',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_20_httpbin_html(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/html', headers={
+            'Accept': 'text/html',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_21_httpbin_json(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/json', headers={
+            'Accept': 'application/json',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_22_httpbin_robots_txt(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/robots.txt', headers={
+            'Accept': 'text/plain',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_23_httpbin_xml(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/xml', headers={
+            'Accept': 'application/xml',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_24_image(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/image', headers={
+            'Accept': 'image/webp',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_25_jpeg(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/image/jpeg', headers={
+            'Accept': 'image/jpeg',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_26_png(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/image/png', headers={
+            'Accept': 'image/png',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_27_svg(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/image/svg', headers={
+            'Accept': 'image/svg+xml',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_28_webp(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/image/webp', headers={
+            'Accept': 'image/webp',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_29_absolute_redirect(self):
+        self.adapter.match_header_order = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/absolute-redirect/3', headers={
+            'Accept': 'text/html',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_30_redirect(self):
+        self.adapter.match_header_order = False
+        self.adapter.match_headers = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/redirect/5', headers={
+            'Accept': 'text/html',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_31_relative_redirect(self):
+        self.adapter.match_header_order = False
+        self.adapter.match_headers = False
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = False
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.get('https://httpbin.org/relative-redirect/4', headers={
+            'Accept': 'text/html',
+            'Sec-Fetch-Mode': 'cors',
+        })
+        self.assertIsNotNone(response)
+
+    def test_32_forms(self):
+        self.adapter.match_header_order = False
+        self.adapter.match_headers = True
+        self.browser.transfer_encoding = None
+        self.browser.upgrade_insecure_requests = True
+        self.browser._last_navigate = self.httpbin_navigate
+        response = self.browser.navigate('https://httpbin.org/forms/post')
+        self.assertIsNotNone(response)
+        response = self.browser.post('https://httpbin.org/post', headers={
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+        }, data=[
+            ('custname', 'a'),
+            ('custtel', 'b'),
+            ('custemail', 'c@d.ef'),
+            ('size', 'large'),
+            ('topping', 'bacon'),
+            ('topping', 'onion'),
+            ('delivery', '19:30'),
+            ('comments', 'ayyy'),
+        ])
+        self.assertIsNotNone(response)
 
 
 class FirefoxTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Firefox()
-        adapter = HarAdapter(load_har(resolve_path('../test_data/ff_full.har')))
-        cls.browser.mount('https://', adapter)
-        cls.browser.mount('http://', adapter)
+        cls.adapter = HarAdapter(load_har(resolve_path('../test_data/ff_full.har')))
+        cls.browser.mount('https://', cls.adapter)
+        cls.browser.mount('http://', cls.adapter)
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()
@@ -327,6 +561,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertIsNotNone(self.browser.navigate('https://duckduckgo.com/'))
 
     def test_02_duckduckgo_search(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = 'Trailers'
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.duckduckgo_navigate
@@ -357,17 +592,20 @@ class FirefoxTest(unittest.TestCase):
         ))
 
     def test_03_duckduckgo_httpbin(self):
+        self.adapter.match_header_order = False
         self.browser.upgrade_insecure_requests = True
         self.browser._last_navigate = self.duckduckgo_navigate
         self.assertIsNotNone(self.browser.get('https://duckduckgo.com/?q=httpbin&t=h_'))
 
     def test_04_httpbin(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = True
         self.browser._last_navigate = self.duckduckgo_navigate
         self.assertIsNotNone(self.browser.navigate('https://httpbin.org/', headers={'Origin': None}))
 
     def test_05_httpbin_delete(self):  # Had to add Content-Length header to HAR
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -375,6 +613,7 @@ class FirefoxTest(unittest.TestCase):
             self.browser.delete('https://httpbin.org/delete', headers={'Accept': 'application/json'}))
 
     def test_06_httpbin_get(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -382,6 +621,7 @@ class FirefoxTest(unittest.TestCase):
             self.browser.get('https://httpbin.org/get', headers={'Accept': 'application/json'}))
 
     def test_07_httpbin_patch(self):  # Had to add Content-Length header to HAR
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -389,6 +629,7 @@ class FirefoxTest(unittest.TestCase):
             self.browser.patch('https://httpbin.org/patch', headers={'Accept': 'application/json'}))
 
     def test_08_httpbin_post(self):  # Had to add Content-Length header to HAR
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -396,6 +637,7 @@ class FirefoxTest(unittest.TestCase):
             self.browser.post('https://httpbin.org/post', headers={'Accept': 'application/json'}))
 
     def test_09_httpbin_put(self):  # Had to add Content-Length header to HAR
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -403,6 +645,7 @@ class FirefoxTest(unittest.TestCase):
             self.browser.put('https://httpbin.org/put', headers={'Accept': 'application/json'}))
 
     def test_10_httpbin_basic_auth(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -412,6 +655,7 @@ class FirefoxTest(unittest.TestCase):
         }))
 
     def test_11_httpbin_status_200(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -420,6 +664,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
 
     def test_12_httpbin_status_300(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -428,6 +673,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertEqual(300, response.status_code)
 
     def test_13_httpbin_status_400(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -436,6 +682,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertEqual(400, response.status_code)
 
     def test_14_httpbin_status_500(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -444,6 +691,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertEqual(500, response.status_code)
 
     def test_15_httpbin_brotli(self):
+        self.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate

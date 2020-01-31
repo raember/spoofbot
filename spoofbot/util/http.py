@@ -15,18 +15,6 @@ def is_domain(string: str) -> bool:
     return not is_ip(string)
 
 
-# def registrable_domain(url: Url) -> Optional[str]:
-#     """https://url.spec.whatwg.org/#host-registrable-domain"""
-#     suffix = get_tld(url.url)
-#     if suffix is None or suffix == url.hostname:
-#         return None
-#     suffix_tuple = suffix.split('.')
-#     host_tuple = url.hostname.split('.')
-#     if len(host_tuple) > len(suffix_tuple):
-#         return '.'.join(host_tuple[-(len(suffix_tuple) + 1):])
-#     return None
-
-
 def opaque_origin(url: Url) -> str:
     """https://html.spec.whatwg.org/multipage/origin.html#concept-origin-opaque
     https://html.spec.whatwg.org/multipage/origin.html#ascii-serialisation-of-an-origin"""
