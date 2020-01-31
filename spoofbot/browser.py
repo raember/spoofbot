@@ -8,7 +8,9 @@ from typing import List, Optional, AnyStr, TypeVar, TextIO, Tuple, Callable, Dic
 from urllib.parse import urlparse, urljoin
 
 from requests import Response, Session, Request, PreparedRequest, codes
+# noinspection PyProtectedMember
 from requests._internal_utils import to_native_string
+from requests.adapters import BaseAdapter
 from requests.cookies import extract_cookies_to_jar, merge_cookies, cookiejar_from_dict
 from requests.exceptions import ChunkedEncodingError, ContentDecodingError, TooManyRedirects
 from requests.sessions import merge_setting, merge_hooks
@@ -19,9 +21,7 @@ from urllib3.util.url import parse_url, Url
 from spoofbot.adapter import FileCacheAdapter, HarAdapter
 from spoofbot.operating_system import Windows
 from spoofbot.tag import MimeTypeTag, LanguageTag
-# Thanks, buddy
-# https://stackoverflow.com/questions/44864896/python-ordered-headers-http-requests#44865372
-from spoofbot.util import are_same_origin, are_same_site, ReferrerPolicy, sort_dict, TimelessRequestsCookieJar
+from spoofbot.util import ReferrerPolicy, are_same_origin, are_same_site, sort_dict, TimelessRequestsCookieJar
 
 
 class Destination(Enum):
@@ -102,6 +102,7 @@ class Browser(Session):
     _did_wait: bool
     _header_precedence: list
     _referrer_policy: ReferrerPolicy
+    _adapter: BaseAdapter
 
     def __init__(self):
         super(Browser, self).__init__()
@@ -125,6 +126,18 @@ class Browser(Session):
         self._did_wait = False
         self._header_precedence = []
         self._referrer_policy = ReferrerPolicy.NO_REFERRER_WHEN_DOWNGRADE
+        # noinspection PyTypeChecker
+        self._adapter = None
+
+    @property
+    def adapter(self) -> BaseAdapter:
+        return self._adapter
+
+    @adapter.setter
+    def adapter(self, value: BaseAdapter):
+        self._adapter = value
+        self.mount('https://', value)
+        self.mount('http://', value)
 
     @property
     def user_agent(self) -> str:

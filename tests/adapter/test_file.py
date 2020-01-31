@@ -45,6 +45,7 @@ class CacheAdapterTest(unittest.TestCase):
         self.session.get("https://httpbin.org/headers", headers={'Accept': 'text/json'})
         self.assertFalse(self.cache_adapter.hit)
 
+    # noinspection DuplicatedCode
     def test_cache_different_path(self):
         self.cache_adapter.use_cache = True
         self.cache_adapter.delete("https://httpbin.org/anything2", headers={'Accept': 'text/json'})
@@ -54,6 +55,7 @@ class CacheAdapterTest(unittest.TestCase):
         self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
         self.assertFalse(self.cache_adapter.hit)
 
+    # noinspection DuplicatedCode
     def test_delete_last_with_different_path(self):
         self.cache_adapter.use_cache = True
         self.cache_adapter.delete("https://httpbin.org/anything2", headers={'Accept': 'text/json'})

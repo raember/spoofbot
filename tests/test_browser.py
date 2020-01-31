@@ -10,8 +10,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 from requests import Response
 
-from spoofbot import Firefox, Chrome, MimeTypeTag
-from spoofbot import Windows, MacOSX, Linux
+from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux
 from spoofbot.adapter import load_har, HarAdapter
 from spoofbot.util import encode_form_data, TimelessRequestsCookieJar
 from tests.config import resolve_path
@@ -36,12 +35,7 @@ class WuxiaWorldTest(unittest.TestCase):
             MimeTypeTag("application", "xml", q=0.9),
             MimeTypeTag("*", "*", q=0.8)
         ]
-        cls.adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
-        # adapter.session = cls.browser
-        # adapter.session = Session()
-        # adapter.session.headers.clear()
-        cls.browser.mount('https://', cls.adapter)
-        cls.browser.mount('http://', cls.adapter)
+        cls.browser.adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
 
     def test_01_main_site(self):
         self.browser.transfer_encoding = 'Trailers'
@@ -64,16 +58,16 @@ class WuxiaWorldTest(unittest.TestCase):
             ('__RequestVerificationToken', rvt_input.get('value')),
             ('RememberMe', 'false')
         ]
-        self.adapter.match_header_order = False
-        self.adapter.encode_post_data = True
+        self.browser.adapter.match_header_order = False
+        self.browser.adapter.encode_post_data = True
         resp = self.browser.post('https://www.wuxiaworld.com/account/login', headers={
             'Content-Type': 'application/x-www-form-urlencoded'
         }, data=data)
         self.assertEqual(200, resp.status_code)
-        self.adapter.encode_post_data = False
+        self.browser.adapter.encode_post_data = False
 
     def test_03_claim_karma(self):
-        self.adapter.match_header_order = True
+        self.browser.adapter.match_header_order = True
         resp = self.browser.navigate('https://www.wuxiaworld.com/profile/karma')
         self.assertEqual(200, resp.status_code)
 
@@ -87,7 +81,7 @@ class WuxiaWorldTest(unittest.TestCase):
             ('Type', 'Login'),
             ('__RequestVerificationToken', rvt_input.get('value')),
         ]
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         resp = self.browser.post('https://www.wuxiaworld.com/profile/missions', headers={
             'Content-Type': 'application/x-www-form-urlencoded'
         }, data=encode_form_data(data))
@@ -99,7 +93,7 @@ class WuxiaWorldTest(unittest.TestCase):
             'Accept': 'application/json, text/plain, */*',
         }, data='')
         self.assertEqual(200, resp.status_code)
-        self.adapter.match_header_order = True
+        self.browser.adapter.match_header_order = True
 
     def test_05_novels(self):
         self.browser.upgrade_insecure_requests = True
@@ -123,11 +117,13 @@ class WuxiaWorldTest(unittest.TestCase):
         }, separators=(',', ':')))
         self.assertEqual(200, resp.status_code)
 
+    # noinspection SpellCheckingInspection
     def test_07_btth(self):
         self.browser.upgrade_insecure_requests = True
         resp = self.browser.navigate('https://www.wuxiaworld.com/novel/battle-through-the-heavens')
         self.assertEqual(200, resp.status_code)
 
+    # noinspection SpellCheckingInspection
     def test_08_btth_cover(self):
         self.browser.upgrade_insecure_requests = False
         resp = self.browser.get(
@@ -155,9 +151,7 @@ class ChromeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Chrome()
-        cls.adapter = HarAdapter(load_har(resolve_path('test_data/chrome_full.har')))
-        cls.browser.mount('https://', cls.adapter)
-        cls.browser.mount('http://', cls.adapter)
+        cls.browser.adapter = HarAdapter(load_har(resolve_path('test_data/chrome_full.har')))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()
@@ -224,7 +218,7 @@ class ChromeTest(unittest.TestCase):
         }))
 
     def test_05_httpbin_delete(self):  # Had to add Content-Length header to HAR
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -235,7 +229,7 @@ class ChromeTest(unittest.TestCase):
             }))
 
     def test_06_httpbin_get(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -246,7 +240,7 @@ class ChromeTest(unittest.TestCase):
             }))
 
     def test_07_httpbin_patch(self):  # Had to add Content-Length header to HAR
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -254,7 +248,7 @@ class ChromeTest(unittest.TestCase):
             self.browser.patch('https://httpbin.org/patch', headers={'Accept': 'application/json'}))
 
     def test_08_httpbin_post(self):  # Had to add Content-Length header to HAR
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -262,7 +256,7 @@ class ChromeTest(unittest.TestCase):
             self.browser.post('https://httpbin.org/post', headers={'Accept': 'application/json'}))
 
     def test_09_httpbin_put(self):  # Had to add Content-Length header to HAR
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -270,10 +264,11 @@ class ChromeTest(unittest.TestCase):
             self.browser.put('https://httpbin.org/put', headers={'Accept': 'application/json'}))
 
     def test_10_httpbin_basic_auth(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
+        # noinspection SpellCheckingInspection
         self.assertIsNotNone(self.browser.get('https://httpbin.org/basic-auth/admin/password', headers={
             'Accept': 'application/json',
             'Sec-Fetch-Mode': 'cors',
@@ -281,7 +276,7 @@ class ChromeTest(unittest.TestCase):
         }))
 
     def test_11_httpbin_status_200(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -293,7 +288,7 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
 
     def test_12_httpbin_status_300(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -305,7 +300,7 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(300, response.status_code)
 
     def test_13_httpbin_status_400(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -317,7 +312,7 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(400, response.status_code)
 
     def test_14_httpbin_status_500(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -329,7 +324,7 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(500, response.status_code)
 
     def test_15_httpbin_brotli(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -340,7 +335,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_16_httpbin_deflate(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -351,7 +346,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_17_httpbin_deny(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -362,7 +357,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_18_httpbin_encoding_utf8(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -373,7 +368,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_19_httpbin_gzip(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -384,7 +379,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_20_httpbin_html(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -395,7 +390,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_21_httpbin_json(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -406,7 +401,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_22_httpbin_robots_txt(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -417,7 +412,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_23_httpbin_xml(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -428,7 +423,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_24_image(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -439,7 +434,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_25_jpeg(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -450,7 +445,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_26_png(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -461,7 +456,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_27_svg(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -472,7 +467,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_28_webp(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -483,7 +478,7 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_29_absolute_redirect(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -494,8 +489,8 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_30_redirect(self):
-        self.adapter.match_header_order = False
-        self.adapter.match_headers = False
+        self.browser.adapter.match_header_order = False
+        self.browser.adapter.match_headers = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -506,8 +501,8 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_31_relative_redirect(self):
-        self.adapter.match_header_order = False
-        self.adapter.match_headers = False
+        self.browser.adapter.match_header_order = False
+        self.browser.adapter.match_headers = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -518,13 +513,14 @@ class ChromeTest(unittest.TestCase):
         self.assertIsNotNone(response)
 
     def test_32_forms(self):
-        self.adapter.match_header_order = False
-        self.adapter.match_headers = True
+        self.browser.adapter.match_header_order = False
+        self.browser.adapter.match_headers = True
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = True
         self.browser._last_navigate = self.httpbin_navigate
         response = self.browser.navigate('https://httpbin.org/forms/post')
         self.assertIsNotNone(response)
+        # noinspection SpellCheckingInspection
         response = self.browser.post('https://httpbin.org/post', headers={
             'Content-Type': 'application/x-www-form-urlencoded',
             'Sec-Fetch-Mode': 'navigate',
@@ -548,9 +544,7 @@ class FirefoxTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Firefox()
-        cls.adapter = HarAdapter(load_har(resolve_path('../test_data/ff_full.har')))
-        cls.browser.mount('https://', cls.adapter)
-        cls.browser.mount('http://', cls.adapter)
+        cls.browser.adapter = HarAdapter(load_har(resolve_path('../test_data/ff_full.har')))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()
@@ -561,7 +555,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertIsNotNone(self.browser.navigate('https://duckduckgo.com/'))
 
     def test_02_duckduckgo_search(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = 'Trailers'
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.duckduckgo_navigate
@@ -592,20 +586,20 @@ class FirefoxTest(unittest.TestCase):
         ))
 
     def test_03_duckduckgo_httpbin(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.upgrade_insecure_requests = True
         self.browser._last_navigate = self.duckduckgo_navigate
         self.assertIsNotNone(self.browser.get('https://duckduckgo.com/?q=httpbin&t=h_'))
 
     def test_04_httpbin(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = True
         self.browser._last_navigate = self.duckduckgo_navigate
         self.assertIsNotNone(self.browser.navigate('https://httpbin.org/', headers={'Origin': None}))
 
     def test_05_httpbin_delete(self):  # Had to add Content-Length header to HAR
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -613,7 +607,7 @@ class FirefoxTest(unittest.TestCase):
             self.browser.delete('https://httpbin.org/delete', headers={'Accept': 'application/json'}))
 
     def test_06_httpbin_get(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -621,7 +615,7 @@ class FirefoxTest(unittest.TestCase):
             self.browser.get('https://httpbin.org/get', headers={'Accept': 'application/json'}))
 
     def test_07_httpbin_patch(self):  # Had to add Content-Length header to HAR
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -629,7 +623,7 @@ class FirefoxTest(unittest.TestCase):
             self.browser.patch('https://httpbin.org/patch', headers={'Accept': 'application/json'}))
 
     def test_08_httpbin_post(self):  # Had to add Content-Length header to HAR
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -637,7 +631,7 @@ class FirefoxTest(unittest.TestCase):
             self.browser.post('https://httpbin.org/post', headers={'Accept': 'application/json'}))
 
     def test_09_httpbin_put(self):  # Had to add Content-Length header to HAR
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -645,17 +639,18 @@ class FirefoxTest(unittest.TestCase):
             self.browser.put('https://httpbin.org/put', headers={'Accept': 'application/json'}))
 
     def test_10_httpbin_basic_auth(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
+        # noinspection SpellCheckingInspection
         self.assertIsNotNone(self.browser.get('https://httpbin.org/basic-auth/admin/password', headers={
             'Accept': 'application/json',
             'Authorization': 'Basic YWRtaW46cGFzc3dvcmQ=',
         }))
 
     def test_11_httpbin_status_200(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -664,7 +659,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
 
     def test_12_httpbin_status_300(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -673,7 +668,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertEqual(300, response.status_code)
 
     def test_13_httpbin_status_400(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -682,7 +677,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertEqual(400, response.status_code)
 
     def test_14_httpbin_status_500(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate
@@ -691,7 +686,7 @@ class FirefoxTest(unittest.TestCase):
         self.assertEqual(500, response.status_code)
 
     def test_15_httpbin_brotli(self):
-        self.adapter.match_header_order = False
+        self.browser.adapter.match_header_order = False
         self.browser.transfer_encoding = None
         self.browser.upgrade_insecure_requests = False
         self.browser._last_navigate = self.httpbin_navigate

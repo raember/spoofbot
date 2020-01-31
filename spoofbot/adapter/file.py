@@ -1,14 +1,12 @@
 import logging
 import os
-from io import BytesIO
 from typing import Optional, Set
 
 from requests import Response, PreparedRequest
 from requests.adapters import HTTPAdapter
-from urllib3 import HTTPResponse
 from urllib3.util import parse_url, Url
 
-from spoofbot.adapter.common import MockHTTPResponse
+from spoofbot.util import load_response
 
 
 class FileCacheAdapter(HTTPAdapter):
@@ -95,7 +93,7 @@ class FileCacheAdapter(HTTPAdapter):
             if os.path.exists(filepath):
                 self._log.debug(f"{' ' * len(request.method)}Cache hit at '{filepath}'")
                 self._hit = True
-                response = self._load_response(filepath)
+                response = load_response(filepath)
                 return self.build_response(request, response)
             else:
                 self._log.debug(f"{' ' * len(request.method)}Cache miss for '{filepath}'")
@@ -140,18 +138,6 @@ class FileCacheAdapter(HTTPAdapter):
             fp.write(response.content)
         self._log.debug(f"{' ' * len(response.request.method)}Cached answer in '{filepath}'")
         return response
-
-    def _load_response(self, filepath: str) -> HTTPResponse:
-        with open(filepath, 'rb') as fp:
-            text = fp.read()
-        # body = text.encode('utf-8')
-        return HTTPResponse(
-            body=BytesIO(text),
-            headers={},
-            status=200,
-            preload_content=False,
-            original_response=MockHTTPResponse({})
-        )
 
     def delete(self, url: str, headers: dict):
         url_parsed = parse_url(url)

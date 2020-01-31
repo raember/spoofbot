@@ -1,15 +1,10 @@
 import re
-from email import parser, message
+from email import message, parser
+from io import BytesIO
 
-# Thanks, buddy:
-# https://stackoverflow.com/questions/26740791/using-requests-adapters-httpadapter-for-testing
-# https://github.com/betamaxpy/betamax/blob/ec077d93cf95b65456819b86174af31d025f0d3c/betamax/cassette/util.py#L118
+from urllib3 import HTTPResponse
 
-
-def coerce_content(content, encoding=None):
-    if hasattr(content, 'decode'):
-        content = content.decode(encoding or 'utf-8', 'replace')
-    return content
+from .common import coerce_content
 
 
 class EmailMessage(message.Message):
@@ -30,5 +25,19 @@ class MockHTTPResponse:
         self.msg = p.parsestr(h)
         self.msg.set_payload(h)
 
+    # noinspection PyMethodMayBeStatic
     def isclosed(self):
         return False
+
+
+def load_response(filepath: str) -> HTTPResponse:
+    with open(filepath, 'rb') as fp:
+        text = fp.read()
+    # body = text.encode('utf-8')
+    return HTTPResponse(
+        body=BytesIO(text),
+        headers={},
+        status=200,
+        preload_content=False,
+        original_response=MockHTTPResponse({})
+    )

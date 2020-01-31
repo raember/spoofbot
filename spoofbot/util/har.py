@@ -10,8 +10,8 @@ from requests import Request
 from requests.structures import CaseInsensitiveDict
 from urllib3 import HTTPResponse
 
-from spoofbot.adapter.common import MockHTTPResponse
-from spoofbot.util.common import dict_list_to_dict, dict_list_to_tuple_list, encode_form_data
+from .common import dict_list_to_dict, dict_list_to_tuple_list, encode_form_data
+from .file import MockHTTPResponse
 
 
 def clean_all_in(directory: str, backup_ext: str = '.bak'):
@@ -160,36 +160,6 @@ def response_from_entry(entry: dict) -> HTTPResponse:
                 raise Exception()
         else:
             body = data
-    # if 'text' in content:
-    #     text = content['text']
-    #     if 'encoding' in content:
-    #         encoding = content['encoding']
-    #         if encoding == 'base64':
-    #             body = base64.b64decode(text)
-    #         else:
-    #             body = text.decode(encoding)
-    #     else:
-    #         body = text.encode('utf-8')
-    # else:
-    #     body = b""
-
-    # if 'Set-Cookie' in headers_set:
-    #     altered_headers = []
-    #     if 'date' in headers_set:
-    #         date_offset = datetime.now() - datetime.strptime(headers_set['date'], '%a, %d %b %Y %H:%M:%S GMT')
-    #     else:
-    #         date_offset = timedelta()
-    #     date_format = '%a, %d-%b-%y %H:%M:%S GMT'
-    #     for k, v in headers:
-    #         if k.lower() == 'set-cookie':
-    #             cookie = str_to_dict(v)
-    #             if 'expires' in cookie:
-    #                 expiration_date = datetime.strptime(cookie['expires'], date_format)
-    #                 cookie['expires'] = (expiration_date + date_offset).strftime(date_format)
-    #             altered_headers.append((k, dict_to_str(cookie)))
-    #         else:
-    #             altered_headers.append((k, v))
-    #     headers = altered_headers
 
     return HTTPResponse(
         body=BytesIO(body),

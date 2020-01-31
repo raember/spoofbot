@@ -8,6 +8,12 @@ from urllib.parse import quote_plus
 from requests.cookies import RequestsCookieJar
 
 
+def coerce_content(content, encoding=None):
+    if hasattr(content, 'decode'):
+        content = content.decode(encoding or 'utf-8', 'replace')
+    return content
+
+
 def encode_form_data(data: List[Tuple[str, str]]) -> str:
     """Encodes data from html forms into an escaped, url-query-like string for post messages"""
     # functional flex
@@ -66,6 +72,7 @@ def cookie_header_to_dict(cookie: str, sep: str = '; ', eq: str = '=') -> Dict[s
     return d
 
 
+# noinspection SpellCheckingInspection
 class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
     def __init__(self, mock_date: datetime = datetime.now()):
         super(TimelessRequestsCookieJar, self).__init__()
@@ -139,6 +146,7 @@ class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
                 (not netscape and not rfc2965)):
             return []  # no relevant cookie headers: quick exit
 
+        # noinspection PyBroadException
         try:
             cookies = self._cookies_from_attrs_set(
                 split_header_words(rfc2965_hdrs), request)
@@ -147,6 +155,7 @@ class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
             cookies = []
 
         if ns_hdrs and netscape:
+            # noinspection PyBroadException
             try:
                 # RFC 2109 and Netscape cookies
                 ns_cookies = self._cookies_from_attrs_set(
