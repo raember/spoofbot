@@ -1,7 +1,7 @@
 import logging
 import os
 from io import BytesIO
-from typing import Optional, List
+from typing import Optional, Set
 
 from requests import Response, PreparedRequest
 from requests.adapters import HTTPAdapter
@@ -72,13 +72,13 @@ class FileCacheAdapter(HTTPAdapter):
     def would_hit(self, url: str, headers: dict) -> bool:
         return os.path.exists(self._get_filename(parse_url(url), headers))
 
-    def list_cached(self, url: str) -> List[Url]:
-        urls = []
+    def list_cached(self, url: str) -> Set[Url]:
+        urls = set()
         parsed_url = parse_url(url)
         path = parsed_url.path.rstrip('/')
         for file in os.listdir(os.path.normpath(os.path.join(self._path, parsed_url.host + parsed_url.path))):
             if os.path.isfile(os.path.normpath(os.path.join(self._path, parsed_url.host + parsed_url.path, file))):
-                urls.append(Url(
+                urls.add(Url(
                     parsed_url.scheme,
                     host=parsed_url.hostname,
                     path='/'.join((path, os.path.splitext(file)[0])),

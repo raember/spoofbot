@@ -77,14 +77,10 @@ class CacheAdapterTest(unittest.TestCase):
     def test_list_cached(self):
         self.cache_adapter.use_cache = True
         self.cache_adapter.next_request_cache_url = parse_url("https://httpbin.org/anything2")
-        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
-        self.session.get("https://httpbin.org/anything", headers={'Accept': 'text/json'})
-        self.session.get("https://httpbin.org/headers", headers={'Accept': 'text/json'})
-        self.assertListEqual(
-            [
-                'https://httpbin.org/anything2',
-                'https://httpbin.org/anything',
-                'https://httpbin.org/headers',
-            ],
-            list(map(lambda url: url.url, self.cache_adapter.list_cached("https://httpbin.org/")))
+        self.assertTrue(self.cache_adapter.would_hit("https://httpbin.org/anything", headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.would_hit("https://httpbin.org/anything", headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.would_hit("https://httpbin.org/headers", headers={'Accept': 'text/json'}))
+        self.assertSetEqual(
+            {'/anything2', '/anything', '/headers'},
+            set(map(lambda url: url.path, self.cache_adapter.list_cached("https://httpbin.org/")))
         )

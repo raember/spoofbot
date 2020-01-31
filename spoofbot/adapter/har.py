@@ -1,187 +1,250 @@
 """Provides functionality to inject HAR files as basis for a session to run on"""
 
-import base64
 import json
 import logging
-from io import BytesIO
-from typing import List, Tuple
+import os
+from typing import List, MutableMapping
 
-from requests import PreparedRequest
+from requests import PreparedRequest, Session, Response
 from requests.adapters import HTTPAdapter
+from requests.cookies import extract_cookies_to_jar
 from requests.structures import CaseInsensitiveDict
-from urllib3.response import HTTPResponse
-from urllib3.util.url import parse_url
+from requests.utils import get_encoding_from_headers
 
-from spoofbot.adapter.common import MockHTTPResponse
+from spoofbot.util import request_from_entry, response_from_entry, cookie_header_to_dict, TimelessRequestsCookieJar
 
 
 class HarAdapter(HTTPAdapter):
     """An adapter to be registered in a Session.."""
     _data: dict = None
     _log: logging.Logger
-    _strict_matching: bool = True
-    _delete_after_match: bool = True
+    _match_header_order: bool = True
+    _match_headers: bool = True
+    _match_data: bool = True
+    _delete_after_matching: bool = True
+    _encode_post_data: bool = False
+    _session: Session
 
-    def __init__(self, har_data: dict):
+    def __init__(self, har_data: dict, session: Session = None):
         super(HarAdapter, self).__init__()
         self._log = logging.getLogger(self.__class__.__name__)
         self._data = har_data
+        self._log.info(f"Using HAR file from {str(self)}")
+        if session is None:
+            session = Session()
+            session.headers.clear()
+        self._session = session
 
     @property
-    def strict_matching(self) -> bool:
-        return self._strict_matching
-
-    @strict_matching.setter
-    def strict_matching(self, value: bool):
-        self._strict_matching = value
+    def creator(self) -> str:
+        return self._data['log'].get('creator', {}).get('name', '')
 
     @property
-    def delete_after_match(self) -> bool:
-        return self._delete_after_match
+    def creator_version(self) -> str:
+        return self._data['log'].get('creator', {}).get('version', '')
 
-    @delete_after_match.setter
-    def delete_after_match(self, value: bool):
-        self._delete_after_match = value
+    @property
+    def entries(self) -> List[dict]:
+        return self._data['log']['entries']
+
+    @property
+    def match_header_order(self) -> bool:
+        return self._match_header_order
+
+    @match_header_order.setter
+    def match_header_order(self, value: bool):
+        self._match_header_order = value
+
+    @property
+    def match_headers(self) -> bool:
+        return self._match_headers
+
+    @match_headers.setter
+    def match_headers(self, value: bool):
+        self._match_headers = value
+
+    @property
+    def match_data(self) -> bool:
+        return self._match_data
+
+    @match_data.setter
+    def match_data(self, value: bool):
+        self._match_data = value
+
+    @property
+    def delete_after_matching(self) -> bool:
+        return self._delete_after_matching
+
+    @delete_after_matching.setter
+    def delete_after_matching(self, value: bool):
+        self._delete_after_matching = value
+
+    @property
+    def encode_post_data(self) -> bool:
+        return self._encode_post_data
+
+    @encode_post_data.setter
+    def encode_post_data(self, value: bool):
+        self._encode_post_data = value
+
+    @property
+    def session(self) -> Session:
+        return self._session
+
+    @session.setter
+    def session(self, value: Session):
+        self._session = value
 
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None):
-        entries: list = self._data['log']['entries']
-        for i, entry in enumerate(entries):
-            cached_request = entry['request']
-            if cached_request['method'] == request.method and cached_request['url'] == request.url:
-                if self._strict_matching:
-                    other_headers = CaseInsensitiveDict(self._to_dict(cached_request['headers']))
-                    self._log.debug(f"{' ' * len(request.method)}Testing possible match strictly")
-                    if not self._match_dict(request.headers, other_headers, len(request.method)):
-                        self._log.debug(f"{' ' * len(request.method)}Headers mismatch")
-                        continue
-                    if 'postData' in cached_request:
-                        if not cached_request['postData']['text'] == request.body:
-                            self._log.debug(
-                                f"{' ' * len(request.method)}Post data mismatch:\n{request.body}\n!=\n{cached_request['postData']['text']}")
-                            continue
-                self._log.debug(f"{' ' * len(request.method)}Request matched")
-                json_response = entry['response'].copy()
-                if self._delete_after_match:
-                    del entries[i]  # Delete entry as we already matched it once.
-                    self._log.debug(f"{' ' * len(request.method)}Deleted matched entry from list")
-                if json_response['redirectURL'] != '':
-                    if json_response['redirectURL'].startswith('/'):
-                        url = parse_url(request.url)
-                        url = parse_url(f"{url.scheme}://{url.hostname}{json_response['redirectURL']}")
+        indent = ' ' * len(request.method)
+        for i, entry in enumerate(self.entries):
+            cached_request = self._session.prepare_request(request_from_entry(entry, self._encode_post_data))
+            if self._match_requests(request, cached_request):
+                self._log.debug(f"{indent}Request matched")
+                for key, val in request.headers.items():
+                    if key == 'Cookie':
+                        self._log.debug(f"{indent}  - {key}:")
+                        for c_key, c_val in cookie_header_to_dict(val).items():
+                            self._log.debug(f"{indent}      - {c_key}: {c_val}")
                     else:
-                        url = parse_url(json_response['redirectURL'])
-                    self._log.debug(f"{' ' * len(request.method)}Handling redirection to {url}")
-                    if url.hostname is not None:
-                        request.headers['Host'] = url.hostname
-                    if 'Origin' in request.headers:
-                        del request.headers['Origin']  # no Origin header for fetch requests, since redirect
-                    if url.scheme == 'https':
-                        request.headers['accept-encoding'] = ', '.join(['gzip', 'deflate', 'br'])
-                        if 'TE' not in request.headers:
-                            request.headers['TE'] = 'Trailers'
-                return self.build_response(request, self._create_response(json_response))
+                        self._log.debug(f"{indent}  - {key}: {val}")
+                if self._delete_after_matching:
+                    del self.entries[i]  # Delete entry as we already matched it once.
+                    self._log.debug(f"{indent}Deleted matched entry from list")
+                response = self.build_response(request, response_from_entry(entry))
+                return response
+            self._session.prepare_request(request_from_entry(entry, self._encode_post_data))
         raise Exception("No matching entry in HAR found")
 
-    def _to_dict(self, other: List[dict]) -> List[Tuple[str, str]]:
-        d = []
-        for kv in other:
-            if not kv['name'] == 'content-encoding':
-                d.append((kv['name'], kv['value']))
-        return d
+    def _print_diff(self, name: str, expected: str, actual: str, indent_level: int):
+        indent = ' ' * indent_level
+        self._log.debug(f"{indent}Request {name} does not match:")
+        self._log.debug(f"{indent}  {actual}")
+        self._log.debug(f"{indent}  does not equal expected:")
+        self._log.debug(f"{indent}  {expected}")
 
-    def _match_dict(self, request_headers: CaseInsensitiveDict, cached_headers: CaseInsensitiveDict,
-                    ljustlen: int) -> bool:
-        if request_headers is None:
-            self._log.warning(f"{' ' * ljustlen}Request headers is None")
+    def _match_requests(self, request: PreparedRequest, cached_request: PreparedRequest) -> bool:
+        indent_level = len(request.method)
+        indent = ' ' * indent_level
+        if cached_request.method == request.method and cached_request.url == request.url:
+            success = True
+            if self._match_header_order:
+                success &= self._do_keys_match(request.headers, cached_request.headers, indent_level)
+            if self._match_headers:
+                success &= self._are_dicts_same(request.headers, cached_request.headers, indent_level, 'headers')
+                if 'Cookie' in cached_request.headers or 'Cookie' in request.headers:
+                    request_cookies = cookie_header_to_dict(request.headers.get('Cookie', ''))
+                    cached_cookies = cookie_header_to_dict(cached_request.headers.get('Cookie', ''))
+                    success &= self._are_dicts_same(request_cookies, cached_cookies, indent_level + 2, 'cookies')
+            if self._match_data and cached_request.body:
+                if cached_request.body != request.body:
+                    success = False
+                    self._print_diff('data', cached_request.body, request.body, indent_level)
+            if not success:
+                self._log.debug(indent + '=' * 16)  # To easily distinguish multiple tested requests
+            return success
+        return False
+
+    def _do_keys_match(self, request_headers: CaseInsensitiveDict, cached_headers: CaseInsensitiveDict,
+                       indent_level: int) -> bool:
+        if list(map(str.lower, dict(request_headers).keys())) != list(map(str.lower, dict(cached_headers).keys())):
+            self._print_diff(
+                'data',
+                f"({len(cached_headers)}) {', '.join(list(dict(cached_headers).keys()))}",
+                f"({len(request_headers)}) {', '.join(list(dict(request_headers).keys()))}",
+                indent_level
+            )
             return False
-        verdict = True
+        return True
+
+    def _are_dicts_same(self, request_dict: MutableMapping, cached_dict: MutableMapping, indent_level: int,
+                        name: str) -> bool:
+        indent = ' ' * indent_level
         missing_keys = []
         mismatching_keys = []
         redundant_keys = []
-        for key in cached_headers.keys():
-            if key not in request_headers:
+        verdict = True
+        for key in cached_dict.keys():
+            if key not in request_dict:
                 missing_keys.append(key)
             else:
-                if request_headers[key] != cached_headers[key]:
-                    if key.lower() != 'cookie':
-                        mismatching_keys.append(key)
-                    else:
-                        cached_cookies = dict(map(lambda c: tuple(c.split('=')), cached_headers[key].split('; ')))
-                        request_cookies = dict(map(lambda c: tuple(c.split('=')), request_headers[key].split('; ')))
-                        missing_cookies = []
-                        mismatching_cookies = []
-                        redundant_cookies = []
-                        for cookey in cached_cookies.keys():
-                            if cookey not in request_cookies:
-                                missing_cookies.append(cookey)
-                            else:
-                                if request_cookies[cookey] != cached_cookies[cookey]:
-                                    mismatching_cookies.append(cookey)
-                        for cookey in request_cookies.keys():
-                            if cookey not in cached_cookies:
-                                redundant_cookies.append(cookey)
-                        if len(missing_cookies) > 0:
-                            self._log.debug(f"{' ' * ljustlen}Request cookies are missing the following entries:")
-                            for cookey in missing_cookies:
-                                self._log.debug(f"{' ' * ljustlen}'{cookey}': '{cached_headers[cookey]}'")
-                            verdict = False
-                        if len(redundant_cookies) > 0:
-                            self._log.debug(f"{' ' * ljustlen}Request cookies have the following redundant entries:")
-                            for cookey in redundant_cookies:
-                                self._log.debug(f"{' ' * ljustlen}'{cookey}': '{request_headers[cookey]}'")
-                            verdict = False
-                        if len(mismatching_cookies) > 0:
-                            self._log.debug(f"{' ' * ljustlen}Request cookies have the following mismatching entries:")
-                            for cookey in mismatching_cookies:
-                                self._log.debug(f"{' ' * ljustlen}'{cookey}': '{request_headers[cookey]}'")
-                                self._log.debug(f"{' ' * ljustlen}{' ' * (len(cookey) + 2)}  does not equal:")
-                                self._log.debug(
-                                    f"{' ' * ljustlen}{' ' * (len(cookey) + 2)}  '{cached_headers[cookey]}'")
-                            verdict = False
-        for key in request_headers.keys():
-            if key not in cached_headers:
+                if request_dict[key] != cached_dict[key] and key not in ['Cookie', 'expires']:
+                    # For cookies with altered expiration date
+                    mismatching_keys.append(key)
+        for key in request_dict.keys():
+            if key not in cached_dict:
                 redundant_keys.append(key)
         if len(missing_keys) > 0:
-            self._log.debug(f"{' ' * ljustlen}Request headers are missing the following entries:")
+            self._log.debug(f"{indent}Request {name} are missing the following entries:")
             for key in missing_keys:
-                self._log.debug(f"{' ' * ljustlen}'{key}': '{cached_headers[key]}'")
+                self._log.debug(f"{indent}  - '{key}': '{cached_dict[key]}'")
             verdict = False
         if len(redundant_keys) > 0:
-            self._log.debug(f"{' ' * ljustlen}Request headers have the following redundant entries:")
+            self._log.debug(f"{indent}Request {name} have the following redundant entries:")
             for key in redundant_keys:
-                self._log.debug(f"{' ' * ljustlen}'{key}': '{request_headers[key]}'")
+                self._log.debug(f"{indent}  - '{key}': '{request_dict[key]}'")
             verdict = False
         if len(mismatching_keys) > 0:
-            self._log.debug(f"{' ' * ljustlen}Request headers have the following mismatching entries:")
+            self._log.debug(f"{indent}Request {name} have the following mismatching entries:")
             for key in mismatching_keys:
-                self._log.debug(f"{' ' * ljustlen}'{key}': '{request_headers[key]}'")
-                self._log.debug(f"{' ' * ljustlen}{' ' * (len(key) + 2)}  does not equal:")
-                self._log.debug(f"{' ' * ljustlen}{' ' * (len(key) + 2)}  '{cached_headers[key]}'")
+                self._log.debug(f"{indent}  - '{key}': '{request_dict[key]}'")
+                self._log.debug(f"{indent}    {' ' * (len(key) + 2)}  does not equal expected {name[:-1]}:")
+                self._log.debug(f"{indent}    {' ' * (len(key) + 2)}  '{cached_dict[key]}'")
             verdict = False
         return verdict
 
-    def _create_response(self, json_response: dict) -> HTTPResponse:
-        headers = self._to_dict(json_response['headers'])
-        content = json_response['content']
-        if 'text' in content:
-            text = content['text']
-            if 'encoding' in content:
-                encoding = content['encoding']
-                if encoding == 'base64':
-                    body = base64.b64decode(text)
-                else:
-                    body = text.decode(encoding)
-            else:
-                body = text.encode('utf-8')
+    def build_response(self, req, resp):
+        """Builds a :class:`Response <requests.Response>` object from a urllib3
+        response. This should not be called from user code, and is only exposed
+        for use when subclassing the
+        :class:`HTTPAdapter <requests.adapters.HTTPAdapter>`
+
+        :param req: The :class:`PreparedRequest <PreparedRequest>` used to generate the response.
+        :param resp: The urllib3 response object.
+        :rtype: requests.Response
+        """
+        response = Response()
+
+        cookie_jar = self.session.cookies.__new__(self.session.cookies.__class__)
+        cookie_jar.__init__()
+        if isinstance(cookie_jar, TimelessRequestsCookieJar):
+            cookie_jar.mock_date = self.session.cookies.mock_date
+
+        response.cookies = cookie_jar
+
+        # Fallback to None if there's no status_code, for whatever reason.
+        response.status_code = getattr(resp, 'status', None)
+
+        # Make headers case-insensitive.
+        response.headers = CaseInsensitiveDict(getattr(resp, 'headers', {}))
+
+        # Set encoding.
+        response.encoding = get_encoding_from_headers(response.headers)
+        response.raw = resp
+        response.reason = response.raw.reason
+
+        if isinstance(req.url, bytes):
+            response.url = req.url.decode('utf-8')
         else:
-            body = b""
-        return HTTPResponse(
-            body=BytesIO(body),
-            headers=headers,
-            status=json_response['status'],
-            preload_content=False,
-            original_response=MockHTTPResponse(headers)
-        )
+            response.url = req.url
+
+        # Add new cookies from the server.
+        extract_cookies_to_jar(response.cookies, req, resp)
+
+        # Give the Response some context.
+        response.request = req
+        response.connection = self
+
+        return response
+
+    def __str__(self):
+        version = self.creator_version
+        if version != '':
+            return f"HAR file, {self.creator} {version}, {len(self.entries)} Requests"
+        return f"HAR file, {self.creator}, {len(self.entries)} Requests"
+
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
 
 def load_har(file: str) -> dict:

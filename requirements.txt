@@ -3,3 +3,5 @@ requests
 bs4
 pillow
 toposort
+brotli
+publicsuffix2
