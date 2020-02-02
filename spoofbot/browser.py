@@ -452,7 +452,7 @@ class Browser(Session):
         )
 
         # Await the request timeout
-        self.await_timeout()
+        self.await_timeout(parse_url(prep.url), prep.headers)
 
         # Send the request.
         send_kwargs = {
@@ -763,7 +763,7 @@ class Browser(Session):
             'TE': self._get_te(url),
         })
 
-    def await_timeout(self):
+    def await_timeout(self, url: Url = None, headers: CaseInsensitiveDict = None):
         """Waits until the request timeout expires.
 
         The delay will be omitted if the last request was a hit in the cache.
@@ -776,6 +776,12 @@ class Browser(Session):
         adapter = self.get_adapter('https://')
         if isinstance(adapter, HarAdapter) or isinstance(adapter, FileCacheAdapter) and adapter.hit:
             self._log.debug("Last request was a hit in cache. No need to wait.")
+            return
+        if headers is None:
+            headers = {}
+        headers.setdefault('Accept', 'text/html')
+        if url is not None and isinstance(adapter, FileCacheAdapter) and adapter.would_hit(url, headers):
+            self._log.debug("Request will be a hit in cache. No need to wait.")
             return
         now = datetime.now()
         wait_until = self._last_request_timestamp + self._request_timeout

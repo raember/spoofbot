@@ -8,5 +8,5 @@ from .har import anonymize_har, clean_all_in, clean_har, request_from_entry, res
 from .http import ReferrerPolicy
 from .http import are_same_origin, are_same_origin_domain, are_schemelessly_same_site, are_same_site
 from .http import is_ip, is_domain
-from .http import opaque_origin, tuple_origin
+from .http import opaque_origin, origin_tuple, OriginTuple
 from .http import sort_dict

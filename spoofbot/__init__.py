@@ -1,8 +1,8 @@
 """Core modules for tht web bot"""
 
 # noinspection PyUnresolvedReferences
-from browser import Browser, Firefox, Chrome, MimeTypeTag, LanguageTag
+from .browser import Browser, Firefox, Chrome, MimeTypeTag, LanguageTag
 # noinspection PyUnresolvedReferences
-from operating_system import OS, Windows, WindowsVersion, MacOSX, MacOSXVersion, Linux, LinuxDerivatives
+from .operating_system import OS, Windows, WindowsVersion, MacOSX, MacOSXVersion, Linux, LinuxDerivatives
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"

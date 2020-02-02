@@ -1,7 +1,7 @@
 import re
 import sys
 from enum import Enum
-from typing import Optional, Tuple, Any, Generator
+from typing import Optional, Tuple, Any, Generator, NamedTuple
 
 from publicsuffix2 import get_sld
 from urllib3.util import Url
@@ -18,29 +18,38 @@ def is_domain(string: str) -> bool:
 def opaque_origin(url: Url) -> str:
     """https://html.spec.whatwg.org/multipage/origin.html#concept-origin-opaque
     https://html.spec.whatwg.org/multipage/origin.html#ascii-serialisation-of-an-origin"""
-    return f"{url.scheme}://{url.hostname}"
+    if url.port is None:
+        return f"{url.scheme}://{url.hostname}"
+    return f"{url.scheme}://{url.hostname}:{url.port}"
 
 
-def tuple_origin(url: Url) -> Tuple[str, str, int, str]:
+class OriginTuple(NamedTuple):
+    scheme: str
+    host: str
+    port: Optional[int]
+    domain: Optional[str]
+
+
+def origin_tuple(url: Url) -> OriginTuple:
     """https://html.spec.whatwg.org/multipage/origin.html#concept-origin-tuple"""
     # noinspection PyTypeChecker
-    return url.scheme, url.hostname, url.port, None
+    return OriginTuple(url.scheme, url.hostname, url.port, None)
 
 
 def are_same_origin(a: Url, b: Url) -> bool:
     """https://html.spec.whatwg.org/multipage/origin.html#same-origin"""
-    if opaque_origin(a) == opaque_origin(b):
-        return True
-    if tuple_origin(a)[:3] == tuple_origin(b)[:3]:
-        return True
-    return False
+    # if opaque_origin(a) == opaque_origin(b):
+    #     return True
+    a_tpl = origin_tuple(a)
+    b_tpl = origin_tuple(b)
+    return a_tpl.scheme == b_tpl.scheme and a_tpl.host == b_tpl.host and a_tpl.port == b_tpl.port
 
 
 def are_same_origin_domain(a: Url, b: Url) -> bool:
     """https://html.spec.whatwg.org/multipage/origin.html#same-origin-domain"""
-    if opaque_origin(a) == opaque_origin(b):
-        return True
-    a_tuple, b_tuple = tuple_origin(a), tuple_origin(b)
+    # if opaque_origin(a) == opaque_origin(b):
+    #     return True
+    a_tuple, b_tuple = origin_tuple(a), origin_tuple(b)
     if a_tuple[0] == b_tuple[0] and a_tuple[1] is not None and b_tuple[1] is not None and a_tuple[1] == b_tuple[1]:
         return True
     return False
@@ -49,8 +58,8 @@ def are_same_origin_domain(a: Url, b: Url) -> bool:
 # noinspection SpellCheckingInspection
 def are_schemelessly_same_site(a: Url, b: Url) -> bool:
     """https://html.spec.whatwg.org/multipage/origin.html#schemelessly-same-site"""
-    if opaque_origin(a) == opaque_origin(b):
-        return True
+    # if opaque_origin(a) == opaque_origin(b):
+    #     return True
     host_a, host_b = a.hostname, b.hostname
     reg_dom_a = get_sld(a.url)
     if host_a == host_b and reg_dom_a is not None:
@@ -62,7 +71,8 @@ def are_schemelessly_same_site(a: Url, b: Url) -> bool:
 
 def are_same_site(a: Url, b: Url) -> bool:
     """https://html.spec.whatwg.org/multipage/origin.html#same-site"""
-    return are_schemelessly_same_site(a, b) and (opaque_origin(a) == opaque_origin(b) or a.scheme == b.scheme)
+    # return are_schemelessly_same_site(a, b) and (opaque_origin(a) == opaque_origin(b) or a.scheme == b.scheme)
+    return are_schemelessly_same_site(a, b) and a.scheme == b.scheme
 
 
 def strip_url_for_referrer(url: Url, origin_only: bool = False) -> str:

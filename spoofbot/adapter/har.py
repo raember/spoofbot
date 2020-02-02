@@ -103,11 +103,11 @@ class HarAdapter(HTTPAdapter):
                 self._log.debug(f"{indent}Request matched")
                 for key, val in request.headers.items():
                     if key == 'Cookie':
-                        self._log.debug(f"{indent}  - {key}:")
+                        self._log.debug(f"{indent}  · {key}:")
                         for c_key, c_val in cookie_header_to_dict(val).items():
-                            self._log.debug(f"{indent}      - {c_key}: {c_val}")
+                            self._log.debug(f"{indent}      · {c_key}: {c_val}")
                     else:
-                        self._log.debug(f"{indent}  - {key}: {val}")
+                        self._log.debug(f"{indent}  · {key}: {val}")
                 if self._delete_after_matching:
                     del self.entries[i]  # Delete entry as we already matched it once.
                     self._log.debug(f"{indent}Deleted matched entry from list")
@@ -168,8 +168,7 @@ class HarAdapter(HTTPAdapter):
             if key not in request_dict:
                 missing_keys.append(key)
             else:
-                if request_dict[key] != cached_dict[key] and key not in ['Cookie', 'expires']:
-                    # For cookies with altered expiration date
+                if request_dict[key] != cached_dict[key] and key.lower() != 'cookie':
                     mismatching_keys.append(key)
         for key in request_dict.keys():
             if key not in cached_dict:
@@ -182,12 +181,12 @@ class HarAdapter(HTTPAdapter):
         if len(redundant_keys) > 0:
             self._log.debug(f"{indent}Request {name} have the following redundant entries:")
             for key in redundant_keys:
-                self._log.debug(f"{indent}  - '{key}': '{request_dict[key]}'")
+                self._log.debug(f"{indent}  + '{key}': '{request_dict[key]}'")
             verdict = False
         if len(mismatching_keys) > 0:
             self._log.debug(f"{indent}Request {name} have the following mismatching entries:")
             for key in mismatching_keys:
-                self._log.debug(f"{indent}  - '{key}': '{request_dict[key]}'")
+                self._log.debug(f"{indent}  · '{key}': '{request_dict[key]}'")
                 self._log.debug(f"{indent}    {' ' * (len(key) + 2)}  does not equal expected {name[:-1]}:")
                 self._log.debug(f"{indent}    {' ' * (len(key) + 2)}  '{cached_dict[key]}'")
             verdict = False

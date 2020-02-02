@@ -43,6 +43,8 @@ It supports deleting the last request or a specific file from the cache.
 The cache indicates whether the last made request got a cache hit.
 If there is a request that should be cached that cannot be adequately stored with only hostname and path, one can specify and alternative url to use instead of the request's prior to the request using the adapter's `next_request_cache_url` property.
 This is also supported when deleting the last request from the cache.
+By setting the `backup_and_miss_next_request` property to `True`, the cache will backup the next cached request's result and update it with a new result.
+If it is later determined that the backup should be restored, the `restore_backup()` method can be used.
 
  ## Har Cache
  Using `HarAdapter`, one is able to load `.har` files to use as cache.

@@ -17,6 +17,10 @@ class FileCacheAdapter(HTTPAdapter):
     _last_request: PreparedRequest
     _last_next_request_cache_url: Url
     _next_request_cache_url: Url = None
+    _backup: Optional[bytes] = None
+    _backup_path: str = None
+    _backup_and_miss_next_request: bool = False
+    _indent: str = ''
     EXTENSIONS = ['.html', '.jpg', '.jpeg', '.png', '.json']
 
     def __init__(self, path: str = '.cache'):
@@ -50,22 +54,38 @@ class FileCacheAdapter(HTTPAdapter):
     def next_request_cache_url(self, value: Url):
         self._next_request_cache_url = value
 
-    def send(self,
-             request: PreparedRequest,
-             stream=False,
-             timeout=None,
-             verify=True,
-             cert=None,
-             proxies=None) -> Response:
+    @property
+    def backup_and_miss_next_request(self) -> bool:
+        return self._backup_and_miss_next_request
+
+    @backup_and_miss_next_request.setter
+    def backup_and_miss_next_request(self, value: bool):
+        self._backup_and_miss_next_request = value
+
+    def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None
+             ) -> Response:
+        self._indent = ' ' * len(request.method)
         self._last_request = request
-        response = self._check_cache_for(request)
-        if not response:
+        response = None
+        if self._use_cache:
+            response = self._get_response_if_hit(request)
+        if response is None:
             response = super(FileCacheAdapter, self).send(request, stream, timeout, verify, cert, proxies)
-            if not response.is_redirect:
-                self._store(response)
+            if response.is_redirect:
+                self._link_redirection(response)
+            else:
+                self._save_response(response)
         # noinspection PyTypeChecker
         self._last_next_request_cache_url, self._next_request_cache_url = self._next_request_cache_url, None
         return response
+
+    def _link_redirection(self, response: Response):
+        headers = response.request.headers
+        path_from = self._get_filename(parse_url(response.request.url), headers)
+        path_to = self._get_filename(parse_url(response.headers['Location']), headers)
+        self._make_sure_dir_exists(path_from)
+        os.symlink(path_to, path_from)
+        self._log.debug(f"{self._indent}Symlinked redirection to target.")
 
     def would_hit(self, url: str, headers: dict) -> bool:
         return os.path.exists(self._get_filename(parse_url(url), headers))
@@ -85,18 +105,15 @@ class FileCacheAdapter(HTTPAdapter):
                 ))
         return urls
 
-    def _check_cache_for(self, request: PreparedRequest) -> Optional[Response]:
+    def _get_response_if_hit(self, request: PreparedRequest) -> Optional[Response]:
         url = parse_url(request.url)
         filepath = self._get_filename(url, request.headers)
-        if self._use_cache:
-            # self.log.debug(f"Looking for cached response at '{filepath}'")
-            if os.path.exists(filepath):
-                self._log.debug(f"{' ' * len(request.method)}Cache hit at '{filepath}'")
-                self._hit = True
-                response = load_response(filepath)
-                return self.build_response(request, response)
-            else:
-                self._log.debug(f"{' ' * len(request.method)}Cache miss for '{filepath}'")
+        if os.path.exists(filepath) and not self._backup_and_miss_next_request:
+            self._log.debug(f"{self._indent}Cache hit at '{filepath}'")
+            self._hit = True
+            return self.build_response(request, load_response(filepath))
+        else:
+            self._log.debug(f"{self._indent}Cache miss for '{filepath}'")
         self._hit = False
         return None
 
@@ -128,16 +145,32 @@ class FileCacheAdapter(HTTPAdapter):
             return url_ext
         return url_ext
 
-    def _store(self, response: Response) -> Response:
-        url = parse_url(response.request.url)
-        filepath = self._get_filename(url, response.request.headers)
-        directories = os.path.split(filepath)[0]
+    def _save_response(self, response: Response):
+        filepath = self._get_filename(parse_url(response.request.url), response.request.headers)
+        if os.path.exists(filepath) and self._backup_and_miss_next_request:
+            self._log.debug(f"{self._indent}Backing up old response.")
+            self._backup_and_miss_next_request = False
+            self._backup_path = filepath
+            with open(filepath, 'rb') as fp:
+                self._backup = fp.read()
+        if self._save(response.content, filepath):
+            self._log.debug(f"{self._indent}Cached answer in '{filepath}'")
+
+    @staticmethod
+    def _make_sure_dir_exists(path):
+        directories = os.path.split(path)[0]
         if not os.path.exists(directories):
             os.makedirs(directories)  # Don't use exists_ok=True; Might have '..' in path
-        with open(filepath, 'wb') as fp:
-            fp.write(response.content)
-        self._log.debug(f"{' ' * len(response.request.method)}Cached answer in '{filepath}'")
-        return response
+
+    def _save(self, content: bytes, path: str) -> bool:
+        self._make_sure_dir_exists(path)
+        try:
+            with open(path, 'wb') as fp:
+                fp.write(content)
+            return True
+        except Exception as e:
+            self._log.error(f"{self._indent}Failed to save content to file: {e}")
+            return False
 
     def delete(self, url: str, headers: dict):
         url_parsed = parse_url(url)
@@ -155,3 +188,19 @@ class FileCacheAdapter(HTTPAdapter):
             self.next_request_cache_url = self._last_next_request_cache_url
             self.delete(self._last_request.url, headers=self._last_request.headers)
             self.next_request_cache_url = temp_url
+
+    def restore_backup(self) -> bool:
+        if self._backup is None:
+            self._log.error(f"{self._indent}No backup available.")
+            return False
+        self._log.debug(f"{self._indent}Restoring backup.")
+        assert os.path.exists(self._backup_path)
+        try:
+            with open(self._backup_path, 'wb') as fp:
+                fp.write(self._backup)
+        except Exception as e:
+            self._log.error(f"{self._indent}Failed to save content to file: {e}")
+            return False
+        self._backup = None
+        self._backup_path = ''
+        return True
