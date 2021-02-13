@@ -443,7 +443,7 @@ class Browser(Session):
         )
         prep = self.prepare_request(req)
 
-        prep.headers = CaseInsensitiveDict(sort_dict(prep.headers, self._header_precedence))
+        prep.headers = CaseInsensitiveDict(sort_dict(dict(prep.headers), self._header_precedence))
 
         proxies = proxies or {}
 
@@ -509,7 +509,7 @@ class Browser(Session):
             cookies=merged_cookies,
             hooks=merge_hooks(request.hooks, self.hooks),
         )
-        p.headers = CaseInsensitiveDict(sort_dict(p.headers, self._header_precedence))
+        p.headers = CaseInsensitiveDict(sort_dict(dict(p.headers), self._header_precedence))
         return p
 
     def resolve_redirects(self, resp, req, stream=False, timeout=None,
@@ -798,7 +798,7 @@ class Browser(Session):
 class Firefox(Browser):
     def __init__(self,
                  os=Windows(),
-                 ff_version=(72, 0),
+                 ff_version=(85, 0),
                  build_id=20100101,
                  do_not_track=False,
                  upgrade_insecure_requests=True):
@@ -946,7 +946,7 @@ class Chrome(Browser):
                 request.headers['Sec-Fetch-Mode'] = 'navigate'
             else:
                 request.headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(request.method, url)
-        request.headers = CaseInsensitiveDict(sort_dict(request.headers, self._header_precedence))
+        request.headers = CaseInsensitiveDict(sort_dict(dict(request.headers), self._header_precedence))
 
 # def build_chromium_user_agent(
 #         os=Linux(),
