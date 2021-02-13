@@ -84,16 +84,16 @@ class CacheAdapterTest(unittest.TestCase):
     def test_would_hit(self):
         self.cache_adapter.use_cache = True
         self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
-        self.assertTrue(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.would_hit(parse_url(HTTPBIN_ANYTHING), headers={'Accept': 'text/json'}))
         self.cache_adapter.delete_last()
-        self.assertFalse(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
+        self.assertFalse(self.cache_adapter.would_hit(parse_url(HTTPBIN_ANYTHING), headers={'Accept': 'text/json'}))
 
     def test_list_cached(self):
         self.cache_adapter.use_cache = True
         self.cache_adapter.next_request_cache_url = parse_url(HTTPBIN_ANYTHING2)
-        self.assertTrue(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
-        self.assertTrue(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
-        self.assertTrue(self.cache_adapter.would_hit(HTTPBIN_HEADERS, headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.would_hit(parse_url(HTTPBIN_ANYTHING), headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.would_hit(parse_url(HTTPBIN_ANYTHING), headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.would_hit(parse_url(HTTPBIN_HEADERS), headers={'Accept': 'text/json'}))
         self.assertSetEqual(
             {'/anything2', '/anything', '/headers'},
             set(map(lambda url: url.path, self.cache_adapter.list_cached(HTTPBIN)))

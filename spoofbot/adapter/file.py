@@ -80,15 +80,15 @@ class FileCacheAdapter(HTTPAdapter):
         return response
 
     def _link_redirection(self, response: Response):
-        headers = response.request.headers
+        headers = dict(response.request.headers)
         path_from = self._get_filename(parse_url(response.request.url), headers)
         path_to = self._get_filename(parse_url(response.headers['Location']), headers)
         self._make_sure_dir_exists(path_from)
         os.symlink(path_to, path_from)
         self._log.debug(f"{self._indent}Symlinked redirection to target.")
 
-    def would_hit(self, url: str, headers: dict) -> bool:
-        return os.path.exists(self._get_filename(parse_url(url), headers))
+    def would_hit(self, url: Url, headers: dict) -> bool:
+        return os.path.exists(self._get_filename(url, headers))
 
     def list_cached(self, url: str) -> Set[Url]:
         urls = set()
@@ -107,7 +107,7 @@ class FileCacheAdapter(HTTPAdapter):
 
     def _get_response_if_hit(self, request: PreparedRequest) -> Optional[Response]:
         url = parse_url(request.url)
-        filepath = self._get_filename(url, request.headers)
+        filepath = self._get_filename(url, dict(request.headers))
         if os.path.exists(filepath) and not self._backup_and_miss_next_request:
             self._log.debug(f"{self._indent}Cache hit at '{filepath}'")
             self._hit = True
@@ -146,7 +146,7 @@ class FileCacheAdapter(HTTPAdapter):
         return url_ext
 
     def _save_response(self, response: Response):
-        filepath = self._get_filename(parse_url(response.request.url), response.request.headers)
+        filepath = self._get_filename(parse_url(response.request.url), dict(response.request.headers))
         if os.path.exists(filepath) and self._backup_and_miss_next_request:
             self._log.debug(f"{self._indent}Backing up old response.")
             self._backup_and_miss_next_request = False
@@ -186,7 +186,7 @@ class FileCacheAdapter(HTTPAdapter):
         if self._last_request:
             temp_url, self.next_request_cache_url = self._next_request_cache_url, self._last_next_request_cache_url
             self.next_request_cache_url = self._last_next_request_cache_url
-            self.delete(self._last_request.url, headers=self._last_request.headers)
+            self.delete(self._last_request.url, headers=dict(self._last_request.headers))
             self.next_request_cache_url = temp_url
 
     def restore_backup(self) -> bool:
