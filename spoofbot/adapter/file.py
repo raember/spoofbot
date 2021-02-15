@@ -80,12 +80,20 @@ class FileCacheAdapter(HTTPAdapter):
         return response
 
     def _link_redirection(self, response: Response):
-        headers = dict(response.request.headers)
-        path_from = self._get_filename(parse_url(response.request.url), headers)
-        path_to = self._get_filename(parse_url(response.headers['Location']), headers)
+        headers = response.request.headers
+        old_url = parse_url(response.request.url)
+        path_from = self._get_filename(old_url, dict(headers))
+        location = response.headers['Location']
+        if location.startswith('/'):
+            # No host provided
+            location = f"{old_url.scheme}://{old_url.host}{location}"
+        path_to = self._get_filename(parse_url(location), dict(headers))
         self._make_sure_dir_exists(path_from)
-        os.symlink(path_to, path_from)
-        self._log.debug(f"{self._indent}Symlinked redirection to target.")
+        if not os.path.exists(path_to):
+            os.symlink(path_to, path_from)
+            self._log.debug(f"{self._indent}Symlinked redirection to target.")
+        else:
+            self._log.debug(f"{self._indent}Symlink redirection already exists.")
 
     def would_hit(self, url: Url, headers: dict) -> bool:
         return os.path.exists(self._get_filename(url, headers))
