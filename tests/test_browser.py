@@ -543,7 +543,7 @@ class ChromeTest(unittest.TestCase):
 class FirefoxTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.browser = Firefox()
+        cls.browser = Firefox(ff_version=(72, 0))
         cls.browser.adapter = HarAdapter(load_har(resolve_path('../test_data/ff_full.har')))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
