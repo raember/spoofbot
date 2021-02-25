@@ -10,12 +10,12 @@ from tests.config import resolve_path
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 
-DUCKDUCKGO = 'https://www.duckduckgo.com/'
-DUCKDUCKGO_NO_REDIRECT = 'https://duckduckgo.com/'
-HTTPBIN = 'https://httpbin.org/'
-HTTPBIN_ANYTHING = f'{HTTPBIN}anything'
-HTTPBIN_ANYTHING2 = f'{HTTPBIN}anything2'
-HTTPBIN_HEADERS = f'{HTTPBIN}headers'
+DUCKDUCKGO = parse_url('https://www.duckduckgo.com/')
+DUCKDUCKGO_NO_REDIRECT = parse_url('https://duckduckgo.com/')
+HTTPBIN = parse_url('https://httpbin.org/')
+HTTPBIN_ANYTHING = parse_url('https://httpbin.org/anything')
+HTTPBIN_ANYTHING2 = parse_url('https://httpbin.org/anything2')
+HTTPBIN_HEADERS = parse_url('https://httpbin.org/headers')
 
 
 class CacheAdapterTest(unittest.TestCase):
@@ -63,7 +63,7 @@ class CacheAdapterTest(unittest.TestCase):
         self.cache_adapter.delete(HTTPBIN_ANYTHING2, headers={'Accept': 'text/json'})
         self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
         self.assertIsNone(self.cache_adapter.next_request_cache_url)
-        self.cache_adapter.next_request_cache_url = parse_url(HTTPBIN_ANYTHING2)
+        self.cache_adapter.next_request_cache_url = HTTPBIN_ANYTHING2
         self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
         self.assertFalse(self.cache_adapter.hit)
 
@@ -73,27 +73,28 @@ class CacheAdapterTest(unittest.TestCase):
         self.cache_adapter.delete(HTTPBIN_ANYTHING2, headers={'Accept': 'text/json'})
         self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
         self.assertIsNone(self.cache_adapter.next_request_cache_url)
-        self.cache_adapter.next_request_cache_url = parse_url(HTTPBIN_ANYTHING2)
+        self.cache_adapter.next_request_cache_url = HTTPBIN_ANYTHING2
         self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
         self.assertFalse(self.cache_adapter.hit)
         self.cache_adapter.delete_last()
-        self.cache_adapter.next_request_cache_url = parse_url(HTTPBIN_ANYTHING2)
+        self.cache_adapter.next_request_cache_url = HTTPBIN_ANYTHING2
         self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
         self.assertFalse(self.cache_adapter.hit)
 
     def test_would_hit(self):
         self.cache_adapter.use_cache = True
         self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
-        self.assertTrue(self.cache_adapter.would_hit(parse_url(HTTPBIN_ANYTHING), headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
         self.cache_adapter.delete_last()
-        self.assertFalse(self.cache_adapter.would_hit(parse_url(HTTPBIN_ANYTHING), headers={'Accept': 'text/json'}))
+        self.assertFalse(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
 
     def test_list_cached(self):
         self.cache_adapter.use_cache = True
-        self.cache_adapter.next_request_cache_url = parse_url(HTTPBIN_ANYTHING2)
-        self.assertTrue(self.cache_adapter.would_hit(parse_url(HTTPBIN_ANYTHING), headers={'Accept': 'text/json'}))
-        self.assertTrue(self.cache_adapter.would_hit(parse_url(HTTPBIN_ANYTHING), headers={'Accept': 'text/json'}))
-        self.assertTrue(self.cache_adapter.would_hit(parse_url(HTTPBIN_HEADERS), headers={'Accept': 'text/json'}))
+        self.cache_adapter.next_request_cache_url = HTTPBIN_ANYTHING2
+        self.assertTrue(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.would_hit(HTTPBIN_HEADERS, headers={'Accept': 'text/json'}))
+        print(self.cache_adapter.list_cached(parse_url('https://httpbin.org')))
         self.assertSetEqual(
             {'/anything2', '/anything', '/headers'},
             set(map(lambda url: url.path, self.cache_adapter.list_cached(HTTPBIN)))

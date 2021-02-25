@@ -1,6 +1,7 @@
 import re
 from email import message, parser
 from io import BytesIO
+from pathlib import Path
 
 from urllib3 import HTTPResponse
 
@@ -30,7 +31,7 @@ class MockHTTPResponse:
         return False
 
 
-def load_response(filepath: str) -> HTTPResponse:
+def load_response(filepath: Path) -> HTTPResponse:
     with open(filepath, 'rb') as fp:
         text = fp.read()
     # body = text.encode('utf-8')
