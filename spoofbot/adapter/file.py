@@ -132,6 +132,7 @@ class FileCacheAdapter(HTTPAdapter):
         """
         if self._next_request_cache_url is not None:
             url = self._next_request_cache_url
+            del self._next_request_cache_url
         base_path = Path(self._path, url.host)
         url_path = url.path if url.path else ''
         if add_ext:
@@ -178,7 +179,7 @@ class FileCacheAdapter(HTTPAdapter):
             self._log.debug(f"{self._indent}Cached answer in '{filepath}'")
 
     def _save(self, content: bytes, path: Path) -> bool:
-        path.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(path, 'wb') as fp:
                 fp.write(content)
