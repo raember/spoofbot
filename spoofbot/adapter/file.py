@@ -153,9 +153,9 @@ class FileCacheAdapter(HTTPAdapter):
         url_path = url.path if url.path else ''
         if add_ext:
             url_path += self._extract_extension(url, headers)
-        abs_filepath = Path(base_path, url_path.lstrip('/')).resolve()
+        abs_filepath = Path(base_path, url_path.lstrip('/'))
         try:
-            rel_filepath = abs_filepath.relative_to(base_path.resolve())
+            rel_filepath = abs_filepath.relative_to(base_path)
         except ValueError as e:
             self._log.error("Url contained path traversal.")
             raise e
