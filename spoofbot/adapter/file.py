@@ -21,7 +21,7 @@ class FileCacheAdapter(HTTPAdapter):
     _backup_path: Path = None
     _backup_and_miss_next_request: bool = False
     _indent: str = ''
-    EXTENSIONS = ['.html', '.jpg', '.jpeg', '.png', '.json']
+    EXTENSIONS = ['.html', '.jpg', '.jpeg', '.png', '.json', '.pdf']
 
     def __init__(self, path: str = '.cache'):
         super(FileCacheAdapter, self).__init__()
@@ -164,7 +164,7 @@ class FileCacheAdapter(HTTPAdapter):
             # self.log.warning(f"No extension found using the Accept header. Assuming {url_ext[1:]}.")
             return url_ext
         if url_ext in self.EXTENSIONS:
-            return url_ext
+            return ''
         return url_ext
 
     def _save_response(self, response: Response):
