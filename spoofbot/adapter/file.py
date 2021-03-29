@@ -1,9 +1,8 @@
 import logging
 from pathlib import Path
-from typing import Optional, Set
-
 from requests import Response, PreparedRequest
 from requests.adapters import HTTPAdapter
+from typing import Optional, Set
 from urllib3.util import parse_url, Url
 
 from spoofbot.util import load_response
