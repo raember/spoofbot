@@ -148,7 +148,7 @@ class FileCacheAdapter(HTTPAdapter):
         """
         if self._next_request_cache_url is not None:
             url = self._next_request_cache_url
-            del self._next_request_cache_url
+            # del self._next_request_cache_url
         base_path = Path(self._path, url.host)
         url_path = url.path if url.path else ''
         if add_ext:
