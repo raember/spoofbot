@@ -82,7 +82,12 @@ class FileCacheAdapter(HTTPAdapter):
         headers = dict(response.request.headers)
         path = self._get_filename(parse_url(response.request.url), headers)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.symlink_to(self._get_filename(parse_url(response.headers['Location']), headers))
+        target = self._get_filename(parse_url(response.headers['Location']), headers)
+        target = Path(
+            *['..' for _ in range(len(path.parts) - 2)],
+            *target.parts[1:]
+        )
+        path.symlink_to(target)
         self._log.debug(f"{self._indent}Symlinked redirection to target.")
 
     def would_hit(self, url: Url, headers: dict) -> bool:
@@ -111,10 +116,22 @@ class FileCacheAdapter(HTTPAdapter):
     def _get_response_if_hit(self, request: PreparedRequest) -> Optional[Response]:
         url = parse_url(request.url)
         filepath = self._get_filename(url, dict(request.headers))
-        if filepath.exists() and not self._backup_and_miss_next_request:
+        if filepath.is_file() and not self._backup_and_miss_next_request:
             self._log.debug(f"{self._indent}Cache hit at '{filepath}'")
             self._hit = True
             return self.build_response(request, load_response(filepath))
+        elif filepath.is_symlink() and not self._backup_and_miss_next_request:
+            self._log.debug(f"{self._indent}Cache hit redirection at '{filepath}'")
+            from urllib3 import HTTPResponse
+            import os
+            from io import BytesIO
+            self._log.debug(f"{self._indent}DIRECTS TO: https://{os.readlink(str(filepath)).lstrip('./')}")
+            return self.build_response(request, HTTPResponse(
+                body=BytesIO(b''),
+                headers={'Location': f"https://{os.readlink(str(filepath)).lstrip('./')}"},
+                status=302,
+                preload_content=False
+            ))
         else:
             self._log.debug(f"{self._indent}Cache miss for '{filepath}'")
         self._hit = False
