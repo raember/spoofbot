@@ -14,7 +14,7 @@ from requests.utils import get_encoding_from_headers
 from spoofbot.util import request_from_entry, response_from_entry, cookie_header_to_dict, TimelessRequestsCookieJar
 
 
-class HarAdapter(HTTPAdapter):
+class HarCache(HTTPAdapter):
     """An adapter to be registered in a Session.."""
     _data: dict = None
     _log: logging.Logger

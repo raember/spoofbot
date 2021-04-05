@@ -9,7 +9,7 @@ from urllib3.util import parse_url, Url
 from spoofbot.util import load_response
 
 
-class FileCacheAdapter(HTTPAdapter):
+class FileCache(HTTPAdapter):
     _log: logging.Logger
     _path: Path = None
     _use_cache = True

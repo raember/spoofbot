@@ -18,7 +18,7 @@ from requests.structures import CaseInsensitiveDict
 from requests.utils import requote_uri, rewind_body, get_netrc_auth
 from urllib3.util.url import parse_url, Url
 
-from spoofbot.adapter import FileCacheAdapter, HarAdapter
+from spoofbot.adapter import FileCache, HarCache
 from spoofbot.operating_system import Windows
 from spoofbot.tag import MimeTypeTag, LanguageTag
 from spoofbot.util import ReferrerPolicy, are_same_origin, are_same_site, sort_dict, TimelessRequestsCookieJar
@@ -774,13 +774,13 @@ class Browser(Session):
         self._waiting_period = timedelta(seconds=0.0)
         self._did_wait = False
         adapter = self.get_adapter('https://')
-        if isinstance(adapter, HarAdapter) or isinstance(adapter, FileCacheAdapter) and adapter.hit:
+        if isinstance(adapter, HarCache) or isinstance(adapter, FileCache) and adapter.hit:
             self._log.debug("Last request was a hit in cache. No need to wait.")
             return
         if headers is None:
             headers = {}
         headers.setdefault('Accept', 'text/html')
-        if url is not None and isinstance(adapter, FileCacheAdapter) and adapter.would_hit(url, headers):
+        if url is not None and isinstance(adapter, FileCache) and adapter.is_hit(url, headers):
             self._log.debug("Request will be a hit in cache. No need to wait.")
             return
         now = datetime.now()

@@ -9,11 +9,11 @@ from PIL.Image import Image
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from requests import Response
+from tests.spoofbot.config import resolve_path
 
 from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux
-from spoofbot.adapter import load_har, HarAdapter
+from spoofbot.adapter import load_har, HarCache
 from spoofbot.util import encode_form_data, TimelessRequestsCookieJar
-from tests.config import resolve_path
 
 logging.basicConfig(level=logging.DEBUG)
 # noinspection SpellCheckingInspection
@@ -35,7 +35,7 @@ class WuxiaWorldTest(unittest.TestCase):
             MimeTypeTag("application", "xml", q=0.9),
             MimeTypeTag("*", "*", q=0.8)
         ]
-        cls.browser.adapter = HarAdapter(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
+        cls.browser.adapter = HarCache(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
 
     def test_01_main_site(self):
         self.browser.transfer_encoding = 'Trailers'
@@ -151,7 +151,7 @@ class ChromeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Chrome()
-        cls.browser.adapter = HarAdapter(load_har(resolve_path('test_data/chrome_full.har')))
+        cls.browser.adapter = HarCache(load_har(resolve_path('test_data/chrome_full.har')))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()
@@ -544,7 +544,7 @@ class FirefoxTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Firefox(ff_version=(72, 0))
-        cls.browser.adapter = HarAdapter(load_har(resolve_path('../test_data/ff_full.har')))
+        cls.browser.adapter = HarCache(load_har(resolve_path('../test_data/ff_full.har')))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()

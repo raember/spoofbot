@@ -4,8 +4,8 @@ import unittest
 from requests import Session
 from urllib3.util import parse_url
 
-from spoofbot.adapter import FileCacheAdapter
-from tests.config import resolve_path
+from config import resolve_path
+from spoofbot.adapter import FileCache
 
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
@@ -22,7 +22,7 @@ class CacheAdapterTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.cache_adapter = FileCacheAdapter(resolve_path('../../tests/adapter/.cache'))
+        cls.cache_adapter = FileCache(resolve_path('../../tests/adapter/.cache'))
         cls.session = Session()
         cls.session.mount('http://', cls.cache_adapter)
         cls.session.mount('https://', cls.cache_adapter)

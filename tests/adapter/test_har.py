@@ -3,8 +3,8 @@ import unittest
 
 from requests import Session
 
-from spoofbot.adapter import HarAdapter, load_har
-from tests.config import resolve_path
+from config import resolve_path
+from spoofbot.adapter import HarCache, load_har
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.DEBUG)
 class HarProxyTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.har_adapter = HarAdapter(load_har(resolve_path('../../test_data/www.wuxiaworld.com_Archive_ALL.har')))
+        cls.har_adapter = HarCache(load_har(resolve_path('../../test_data/www.wuxiaworld.com_Archive_ALL.har')))
         cls.har_adapter.match_headers = False
         cls.har_adapter.match_header_order = False
         cls.har_adapter.match_data = False
