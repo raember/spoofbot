@@ -1,10 +1,8 @@
 import errno
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
-from urllib.parse import parse_qsl, quote_plus, unquote_plus
 
 from requests import Response, PreparedRequest
 from requests.adapters import HTTPAdapter
@@ -20,7 +18,6 @@ class FileCache(HTTPAdapter):
     _is_offline: bool = False
     _cache_on_status: set = {200, 201, 300, 301, 302, 303, 307, 308}
     _cache_path: Path = None
-    _add_ext: bool = False
     _hit = False
     _last_request: PreparedRequest
     _last_next_request_cache_url: Url
@@ -129,14 +126,7 @@ class FileCache(HTTPAdapter):
     def cache_path(self) -> Path:
         return self._cache_path
 
-    @property
-    def use_cache(self) -> bool:
-        return self._use_cache
-
-    @use_cache.setter
-    def use_cache(self, value: bool):
-        self._use_cache = value
-
+    # TODO: Figure out a good way of keeping track of hits vs misses of the last couple of requests
     @property
     def hit(self) -> bool:
         return self._hit
@@ -175,7 +165,6 @@ class FileCache(HTTPAdapter):
                 raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filepath)
             self._log.debug(f"{self._indent}  Sending HTTP request")
             response = super(FileCache, self).send(request, stream, timeout, verify, cert, proxies)
-            self._last_request_timestamp = datetime.now()
             if self._is_passive and response.status_code in self._cache_on_status:
                 if response.is_redirect:
                     self._link_redirection(response)
