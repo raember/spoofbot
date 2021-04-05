@@ -5,7 +5,7 @@ from pathlib import Path
 
 from urllib3 import HTTPResponse
 
-from .common import coerce_content
+from spoofbot.util.common import coerce_content
 
 
 class EmailMessage(message.Message):

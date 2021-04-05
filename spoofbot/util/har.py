@@ -10,8 +10,8 @@ from requests import Request
 from requests.structures import CaseInsensitiveDict
 from urllib3 import HTTPResponse
 
-from .common import dict_list_to_dict, dict_list_to_tuple_list, encode_form_data
-from .file import MockHTTPResponse
+from spoofbot.util.common import dict_list_to_dict, dict_list_to_tuple_list, encode_form_data
+from spoofbot.util.file import MockHTTPResponse
 
 
 def clean_all_in(directory: str, backup_ext: str = '.bak'):
