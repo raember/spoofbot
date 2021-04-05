@@ -124,7 +124,20 @@ class FileCache(HTTPAdapter):
 
     @property
     def cache_path(self) -> Path:
+        """
+        The root path of the cache.
+        """
         return self._cache_path
+
+    @cache_path.setter
+    def cache_path(self, path: Path):
+        """
+        The root path of the cache.
+
+        :param path: The new path
+        :type path: Path
+        """
+        self._cache_path = path
 
     # TODO: Figure out a good way of keeping track of hits vs misses of the last couple of requests
     @property
