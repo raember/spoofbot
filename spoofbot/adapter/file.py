@@ -155,7 +155,7 @@ class FileCache(HTTPAdapter):
             if self._is_offline:
                 # In offline mode, we cannot make new HTTP requests for cache misses
                 raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filepath)
-            self._log.debug(f"{self._indent}  Sending HTTP request")
+            self._log.debug(f"{self._indent}  Sending HTTP request.")
             response = super(FileCache, self).send(request, stream, timeout, verify, cert, proxies)
             if self._is_passive and response.status_code in self._cache_on_status:
                 if filepath.exists():
