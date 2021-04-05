@@ -144,6 +144,17 @@ def to_url(filepath: Union[str, PathLike], root_path: Union[str, PathLike] = Pat
 
 
 def get_symlink_path(from_path: Path, to_path: Path, root: Path) -> Path:
+    """
+    Get the relative path from one path to another using path traversal for symlinking.
+
+    :param from_path: The path of the symlink
+    :type from_path: Path
+    :param to_path: The path of the target of the symlink
+    :type to_path: Path
+    :param root: The shared root path
+    :type root: Path
+    :return: The relative path possibly using path traversal
+    """
     if not from_path.is_relative_to(root):
         raise ValueError(f"{from_path} is not a subdir of {root}")
     if not to_path.is_relative_to(root):
