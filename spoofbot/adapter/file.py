@@ -174,16 +174,15 @@ class FileCache(HTTPAdapter):
         self._last_next_request_cache_url, self._next_request_cache_url = self._next_request_cache_url, None
         return response
 
-    def _link_redirection(self, response: Response):
+    def _link_redirection(self, response: Response, filepath: Path):
         headers = dict(response.request.headers)
-        path = self._get_filename(parse_url(response.request.url), headers)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        target = self._get_filename(parse_url(response.headers['Location']), headers)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        target = self.to_filepath(parse_url(response.headers['Location']))
         target = Path(
-            *['..' for _ in range(len(path.parts) - 2)],
+            *['..' for _ in range(len(filepath.parts) - 2)],
             *target.parts[1:]
         )
-        path.symlink_to(target)
+        filepath.symlink_to(target)
         self._log.debug(f"{self._indent}Symlinked redirection to target.")
 
     def is_hit(self, url: Union[Url, str], accept_header: str = 'text/html') -> bool:
