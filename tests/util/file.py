@@ -50,6 +50,12 @@ class UrlToPathMappingTest(unittest.TestCase):
         path = Path(root, 'example.com:443/app=/?var=%5Csome+%2Fval/key=%C3%A4.cache')
         self.assertEqual(str(path), str(to_filepath(url, root)))
 
+    def test_url_to_path2(self):
+        url = 'https://example.com/?key=val&_=0'
+        root = Path('.cache')
+        path = Path(root, 'example.com/?key=val.cache')
+        self.assertEqual(str(path), str(to_filepath(url, root)))
+
     def test_path_to_url(self):
         url = 'https://example.com:443/app=?var=\\some /val&key=ä'
         root = Path('.cache')
