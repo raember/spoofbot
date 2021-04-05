@@ -50,9 +50,13 @@ def load_response(filepath: Path) -> HTTPResponse:
 
 
 CACHE_FILE_SUFFIX = '.cache'
+IGNORE_QUERIES = {'_'}
 
 
-def to_filepath(url: Union[Url, str], root_path: Union[str, PathLike] = Path('.')) -> Path:
+def to_filepath(
+        url: Union[Url, str],
+        root_path: Union[str, PathLike] = Path('.'),
+        ignore_queries: set[str] = None) -> Path:
     """
     Derives the filesystem filepath of a given url in the cache
 
@@ -60,6 +64,8 @@ def to_filepath(url: Union[Url, str], root_path: Union[str, PathLike] = Path('.'
     :type url: Union[Url, str]
     :param root_path: The base path
     :type root_path: Union[str, PathLike]
+    :param ignore_queries: The queries to ignore. Defaults to IGNORE_QUERIES={'_'}
+    :type ignore_queries: set[str]
     :return: The filepath the url gets mapped to
     :rtype: Path
     """
@@ -70,6 +76,9 @@ def to_filepath(url: Union[Url, str], root_path: Union[str, PathLike] = Path('.'
     # Make sure we have a proper root path
     if isinstance(root_path, str):
         root_path = Path(root_path)
+
+    if ignore_queries is None:
+        ignore_queries = IGNORE_QUERIES
 
     # Append hostname to filepath
     host = url.host + (f":{url.port}" if url.port else '')
@@ -83,6 +92,8 @@ def to_filepath(url: Union[Url, str], root_path: Union[str, PathLike] = Path('.'
 
     # Append query to filepath
     for i, (key, val) in enumerate(parse_qsl(url.query)):
+        if key in ignore_queries:
+            continue
         key = quote_plus(key)
         val = quote_plus(val)
         if i == 0:  # Preserve the question mark for identifying the query in the filepath
