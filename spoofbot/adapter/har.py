@@ -25,8 +25,8 @@ class HarCache(HTTPAdapter):
     _encode_post_data: bool = False
     _session: Session
 
-    def __init__(self, har_data: dict, session: Session = None):
-        super(HarAdapter, self).__init__()
+    def __init__(self, har_data: dict, session: Session = None, **kwargs):
+        super(HarCache, self).__init__(**kwargs)
         self._log = logging.getLogger(self.__class__.__name__)
         self._data = har_data
         self._log.info(f"Using HAR file from {str(self)}")
