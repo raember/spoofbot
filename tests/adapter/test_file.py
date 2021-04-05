@@ -96,9 +96,9 @@ class CacheAdapterTest(unittest.TestCase):
     def test_would_hit(self):
         self.cache_adapter.use_cache = True
         self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
-        self.assertTrue(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
+        self.assertTrue(self.cache_adapter.is_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
         self.cache_adapter.delete_last()
-        self.assertFalse(self.cache_adapter.would_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
+        self.assertFalse(self.cache_adapter.is_hit(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'}))
 
     def test_list_cached(self):
         self.cache_adapter.use_cache = True
