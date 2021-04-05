@@ -2,8 +2,7 @@ import errno
 import logging
 import os
 from pathlib import Path
-from queue import Queue
-from typing import Optional, Union
+from typing import Union
 
 from requests import Response, PreparedRequest
 from requests.adapters import HTTPAdapter
@@ -20,11 +19,10 @@ class FileCache(HTTPAdapter):
     _is_offline: bool = False
     _cache_on_status: set = {200, 201, 300, 301, 302, 303, 307, 308}
     _cache_path: Path = None
-    _hit = False
+    _hit: bool = False
+    _ignore_queries: set[str] = {'_'}
     _last_request: PreparedRequest
-    _last_next_request_cache_url: Url
-    _next_request_cache_url: Url = None
-    _backup: dict[PreparedRequest, bytes] = {}
+    _backups: dict[PreparedRequest, bytes] = {}
     _indent: str = ''
 
     def __init__(self, path: str = '.cache', **kwargs):
@@ -36,6 +34,10 @@ class FileCache(HTTPAdapter):
         self._cache_on_status = {200, 201, 300, 301, 302, 303, 307, 308}
         self._cache_path = Path(path)
         self._cache_path.mkdir(parents=True, exist_ok=True)
+        self._hit = False
+        self._ignore_queries = {'_'}
+        self._last_request = None
+        self._backups = {}
 
     @property
     def is_active(self) -> bool:
@@ -139,69 +141,105 @@ class FileCache(HTTPAdapter):
         """
         self._cache_path = path
 
-    # TODO: Figure out a good way of keeping track of hits vs misses of the last couple of requests
     @property
     def hit(self) -> bool:
+        """
+        True if the last processed requests was a hit in the cache
+        """
         return self._hit
 
     @property
-    def next_request_cache_url(self) -> Url:
-        return self._next_request_cache_url
+    def ignore_queries(self) -> set[str]:
+        """
+        Set of query parameters to ignore when mapping a URL to a path.
 
-    @next_request_cache_url.setter
-    def next_request_cache_url(self, value: Url):
-        self._next_request_cache_url = value
+        Defaults to {'_'}
+        """
+        return self._ignore_queries
+
+    @ignore_queries.setter
+    def ignore_queries(self, params: set[str]):
+        """
+        Set of query parameters to ignore when mapping a URL to a path.
+
+        :param params: The new set or params to ignore
+        :type params: set[str]
+        """
+        self._ignore_queries = params
+
+    @property
+    def backups(self) -> dict[PreparedRequest, bytes]:
+        """
+        The backup content of responses which were overwritten (by being in inactive and passive mode)
+
+        :return: A dict mapping requests to their original content
+        :rtype: dict[PreparedRequest, bytes]
+        """
+        return self._backups
 
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None
              ) -> Response:
         self._indent = ' ' * len(request.method)
         self._last_request = request
-        response = None
-        filepath = to_filepath(request.url, self._cache_path)
-        if self._is_active:
+        filepath = to_filepath(request.url, self._cache_path, self._ignore_queries)
+        if self._is_active:  # Check for a cached answer
             if filepath.exists():
                 self._log.debug(f"{self._indent}  Cache hit")
-                response = self._load_response(request, filepath)
-            else:
-                self._log.debug(f"{self._indent}  Cache miss")
-        if response is None:
-            if self._is_offline:
-                # In offline mode, we cannot make new HTTP requests for cache misses
-                raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(filepath))
-            self._log.debug(f"{self._indent}  Sending HTTP request.")
-            response = super(FileCache, self).send(request, stream, timeout, verify, cert, proxies)
-            if self._is_passive and response.status_code in self._cache_on_status:
-                if filepath.exists():
-                    # TODO: Handle case where response was already cached. Backup mechanism desired
-                    pass
-                self._save_response(response, filepath)
-        # noinspection PyTypeChecker
-        self._last_next_request_cache_url, self._next_request_cache_url = self._next_request_cache_url, None
+                self._hit = True
+                return self._load_response(request, filepath)
+        self._log.debug(f"{self._indent}  Cache miss")
+        self._hit = False
+
+        # In offline mode, we cannot make new HTTP requests for cache misses
+        if self._is_offline:
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(filepath))
+
+        # Send HTTP request to remote
+        response = super(FileCache, self).send(request, stream, timeout, verify, cert, proxies)
+        if self._is_passive and response.status_code in self._cache_on_status:  # Store received response in cache
+            if filepath.exists():
+                self._backup_cached_response(request, filepath)
+            self._save_response(response, filepath)
         return response
 
     def is_hit(self, url: Union[Url, str]) -> bool:
-        return to_filepath(url, self._cache_path).exists()
+        """
+        Check whether a request to a given URL would hit the cache.
+
+        :param url: The URL
+        :type url: Url
+        :return: True if it would be a hit. False otherwise.
+        :rtype: bool
+        """
+        return to_filepath(url, self._cache_path, self._ignore_queries).exists()
 
     def _backup_cached_response(self, request: PreparedRequest, filepath: Path):
         assert filepath.exists()
         with open(filepath, 'rb') as fp:
-            self._backup[request] = fp.read()
+            self._backups[request] = fp.read()
 
-    def _load_response(self, request: PreparedRequest, filepath: Path) -> Optional[Response]:
+    def _load_response(self, request: PreparedRequest, filepath: Path) -> Response:
+        """
+        Load response from cache.
+
+        :param request: The request
+        :type request: PreparedRequest
+        :param filepath: The path of the cached response
+        :type filepath: Path
+        :return: The cached response
+        :rtype: Response
+        """
         # Get file filepath if not already given
         if filepath is None:
-            filepath = to_filepath(request.url, self._cache_path)
+            filepath = to_filepath(request.url, self._cache_path, self._ignore_queries)
 
-        if filepath.is_file() and not self._backup_and_miss_next_request:
-            self._log.debug(f"{self._indent}Cache hit at '{filepath}'")
-            self._hit = True
+        assert filepath.exists()
+
+        if filepath.is_file():
             return self.build_response(request, load_response(filepath))
-        elif filepath.is_symlink() and not self._backup_and_miss_next_request:
-            self._log.debug(f"{self._indent}Cache hit redirection at '{filepath}'")
+        elif filepath.is_symlink():
             from urllib3 import HTTPResponse
-            import os
             from io import BytesIO
-            self._log.debug(f"{self._indent}DIRECTS TO: https://{os.readlink(str(filepath)).lstrip('./')}")
             return self.build_response(request, HTTPResponse(
                 body=BytesIO(b''),
                 headers={'Location': f"https://{os.readlink(str(filepath)).lstrip('./')}"},
@@ -209,27 +247,31 @@ class FileCache(HTTPAdapter):
                 preload_content=False
             ))
         else:
-            self._log.debug(f"{self._indent}Cache miss for '{filepath}'")
-        self._hit = False
-        return None
+            raise NotImplementedError("File path exists but is neither a file nor a symlink?")
 
     def _save_response(self, response: Response, filepath: Path):
+        """
+        Save response into the cache.
+
+        :param response: The response to cache
+        :type response: Response
+        :param filepath: The path of the cached response
+        :type filepath: Path
+        """
         filepath.parent.mkdir(parents=True, exist_ok=True)
-        if response.is_redirect:
-            # If the response is a redirection, use a symlink to simulate that
-            target = to_filepath(parse_url(response.headers['Location']))
+        if response.is_redirect:  # If the response is a redirection, use a symlink to simulate that
+            target = to_filepath(parse_url(response.headers['Location']), self._cache_path, self._ignore_queries)
             target = get_symlink_path(filepath, target, self._cache_path)
             filepath.symlink_to(target)
             self._log.debug(f"{self._indent}  Symlinked redirection to target.")
         else:
-            if filepath.exists() and self._backup_and_miss_next_request:
+            if filepath.exists():  # Make a backup of the cached response before overwriting it
                 self._log.debug(f"{self._indent}  Backing up old response.")
-                self._backup_and_miss_next_request = False
                 self._backup_path = filepath
                 with open(filepath, 'rb') as fp:
-                    self._backup = fp.read()
+                    self._backups[response.request] = fp.read()
             if self._save(response.content, filepath):
-                self._log.debug(f"{self._indent}  Saved response to cache.")
+                self._log.debug(f"{self._indent}  Saved response in cache.")
 
     def _save(self, content: bytes, path: Path) -> bool:
         try:
@@ -240,34 +282,47 @@ class FileCache(HTTPAdapter):
             self._log.error(f"{self._indent}  Failed to save content to file: {e}")
             return False
 
-    def delete(self, url: Url, headers: dict):
-        filepath = self._get_filename(url, headers)
-        self._log.debug(f"Deleting cached response at '{filepath}'")
+    def delete(self, url: Union[str, os.PathLike]):
+        """
+        Delete a cached response from the cache.
+
+        :param url: The url from which the response was received
+        :type url: Union[str, PathLike]
+        """
+        filepath = to_filepath(url, self._cache_path, self._ignore_queries)
         if filepath.exists():
             filepath.unlink()
-            self._log.debug("Cache hit. Deleted response.")
+            self._log.debug(f"Cache hit at '{str(filepath)}'. Deleted response.")
         else:
-            self._log.debug("Cache miss. No response to delete.")
+            self._log.debug(f"Cache miss for '{str(filepath)}'. No response to delete.")
 
     def delete_last(self):
+        """
+        Delete the last request.
+        """
         if self._last_request:
-            temp_url, self.next_request_cache_url = self._next_request_cache_url, self._last_next_request_cache_url
-            self.next_request_cache_url = self._last_next_request_cache_url
-            self.delete(parse_url(self._last_request.url), headers=dict(self._last_request.headers))
-            self.next_request_cache_url = temp_url
+            self.delete(parse_url(self._last_request.url))
 
-    def restore_backup(self) -> bool:
-        if self._backup is None:
-            self._log.error(f"{self._indent}No backup available.")
+    def restore_backup(self, request: PreparedRequest) -> bool:
+        """
+        Restore the backup from a response after it was overwritten.
+
+        :param request: The request
+        :type request: PreparedRequest
+        :return: True if the backup restoration was successful. False otherwise.
+        :rtype: bool
+        """
+        if request not in self._backups.keys():
+            self._log.error("No backup available")
             return False
-        self._log.debug(f"{self._indent}Restoring backup.")
-        assert self._backup_path.exists()
+        self._log.debug("Restoring backup")
+        filepath = to_filepath(request.url, self._cache_path, self._ignore_queries)
+        assert filepath.exists()
         try:
-            with open(self._backup_path, 'wb') as fp:
-                fp.write(self._backup)
+            with open(filepath, 'wb') as fp:
+                fp.write(self._backups[request])
         except Exception as e:
-            self._log.error(f"{self._indent}Failed to save content to file: {e}")
+            self._log.error(f"Failed to save content to file: {e}")
             return False
-        self._backup = None
-        self._backup_path = Path()
+        del self._backups[request]
         return True
