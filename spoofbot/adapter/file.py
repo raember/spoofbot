@@ -24,9 +24,7 @@ class FileCache(HTTPAdapter):
     _last_request: PreparedRequest
     _last_next_request_cache_url: Url
     _next_request_cache_url: Url = None
-    _backup: Optional[bytes] = None
-    _backup_path: Path = None
-    _backup_and_miss_next_request: bool = False
+    _backup: dict[PreparedRequest, bytes] = {}
     _indent: str = ''
 
     def __init__(self, path: str = '.cache', **kwargs):
@@ -141,14 +139,6 @@ class FileCache(HTTPAdapter):
     def next_request_cache_url(self, value: Url):
         self._next_request_cache_url = value
 
-    @property
-    def backup_and_miss_next_request(self) -> bool:
-        return self._backup_and_miss_next_request
-
-    @backup_and_miss_next_request.setter
-    def backup_and_miss_next_request(self, value: bool):
-        self._backup_and_miss_next_request = value
-
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None
              ) -> Response:
         self._indent = ' ' * len(request.method)
@@ -187,8 +177,10 @@ class FileCache(HTTPAdapter):
         filepath.symlink_to(target)
         self._log.debug(f"{self._indent}Symlinked redirection to target.")
 
-    def is_hit(self, url: Union[Url, str], accept_header: str = 'text/html') -> bool:
-        return self.to_filepath(url, accept_header).exists()
+    def _backup_cached_response(self, request: PreparedRequest, filepath: Path):
+        assert filepath.exists()
+        with open(filepath, 'rb') as fp:
+            self._backup[request] = fp.read()
 
     def _load_response(self, request: PreparedRequest, filepath: Path) -> Optional[Response]:
         # Get file filepath if not already given
