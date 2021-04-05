@@ -11,8 +11,12 @@ from spoofbot.util import load_response
 
 class FileCache(HTTPAdapter):
     _log: logging.Logger
-    _path: Path = None
-    _use_cache = True
+    _is_active: bool = True
+    _is_passive: bool = True
+    _is_offline: bool = False
+    _cache_on_status: set = {200, 201, 300, 301, 302, 303, 307, 308}
+    _cache_path: Path = None
+    _add_ext: bool = False
     _hit = False
     _last_request: PreparedRequest
     _last_next_request_cache_url: Url
@@ -23,16 +27,105 @@ class FileCache(HTTPAdapter):
     _indent: str = ''
     EXTENSIONS = ['.html', '.jpg', '.jpeg', '.png', '.json']
 
-    def __init__(self, path: str = '.cache'):
-        super(FileCacheAdapter, self).__init__()
+    def __init__(self, path: str = '.cache', **kwargs):
+        super(FileCache, self).__init__(**kwargs)
         self._log = logging.getLogger(self.__class__.__name__)
-        self._path = Path(path)
-        if not self._path.exists():
-            self._path.mkdir(parents=True)  # Don't use exists_ok=True; Might have path traversal
+        self._is_active = True
+        self._is_passive = True
+        self._is_offline = False
+        self._cache_on_status = {200, 201, 300, 301, 302, 303, 307, 308}
+        self._cache_path = Path(path)
+        self._cache_path.mkdir(parents=True, exist_ok=True)
+        self._add_ext = False
 
     @property
-    def path(self) -> Path:
-        return self._path
+    def is_active(self) -> bool:
+        """
+        Return the cache state to active.
+
+        If true, the FileCache will check new requests against the local cache for hits.
+        Otherwise the FileCache will not check for hits.
+        """
+        return self._is_active
+
+    @is_active.setter
+    def is_active(self, value: bool):
+        """
+        Set whether the cache state is in active mode.
+
+        If set to True, the FileCache will check new requests against the local cache for hits.
+        :param value: The new state of the FileCache
+        :type value: bool
+        """
+        self._is_active = value
+
+    @property
+    def is_passive(self) -> bool:
+        """
+        Get whether the cache state is in passive mode.
+
+        If true, the FileCache will cache the answer of a successful request in the cache.
+        Otherwise the FileCache will not cache the answer.
+        """
+        return self._is_passive
+
+    @is_passive.setter
+    def is_passive(self, value: bool):
+        """
+        Set whether the cache state is in passive mode.
+
+        If set to True, the FileCache will cache the answer of a successful request in the cache.
+        Otherwise the FileCache will not cache the answer.
+        :param value: The new state of the FileCache
+        :type value: bool
+        """
+        self._is_passive = value
+
+    @property
+    def is_offline(self) -> bool:
+        """
+        Get whether the cache state is in offline mode.
+
+        If true, the FileCache will throw an exception if no cache hit occurs.
+        Otherwise the FileCache will allow HTTP requests to remotes.
+        """
+        return self._is_offline
+
+    @is_offline.setter
+    def is_offline(self, value: bool):
+        """
+        Set whether the cache state is in offline mode.
+
+        If set to True, the FileCache will throw an exception if no cache hit occurs.
+        Otherwise the FileCache will allow HTTP requests to remotes.
+        :param value: The new state of the FileCache
+        :type value: bool
+        """
+        self._is_offline = value
+
+    @property
+    def cache_on_status(self) -> set[int]:
+        """
+        Get which response status leads to local caching of the response.
+
+        :return: A set of status codes of responses to be cached after receiving
+        :rtype: set[int]
+        """
+        return self._cache_on_status
+
+    @cache_on_status.setter
+    def cache_on_status(self, status_codes: set[int]):
+        """
+        Get which response status leads to local caching of the response.
+
+        :param status_codes: The status codes
+        :type status_codes: set[int]
+        """
+        self._cache_on_status = status_codes
+
+    @property
+    def cache_path(self) -> Path:
+        return self._cache_path
 
     @property
     def use_cache(self) -> bool:
@@ -67,14 +160,25 @@ class FileCache(HTTPAdapter):
         self._indent = ' ' * len(request.method)
         self._last_request = request
         response = None
-        if self._use_cache:
-            response = self._get_response_if_hit(request)
-        if response is None:
-            response = super(FileCacheAdapter, self).send(request, stream, timeout, verify, cert, proxies)
-            if response.is_redirect:
-                self._link_redirection(response)
+        filepath = self.to_filepath(request.url, request.headers.get('Accept', None))
+        if self._is_active:
+            if filepath.exists():
+                self._log.debug(f"{self._indent}  Cache hit")
+                response = self._load_response(request, filepath)
             else:
-                self._save_response(response)
+                self._log.debug(f"{self._indent}  Cache miss")
+        if response is None:
+            if self._is_offline:
+                # In offline mode, we cannot make new HTTP requests for cache misses
+                raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filepath)
+            self._log.debug(f"{self._indent}  Sending HTTP request")
+            response = super(FileCache, self).send(request, stream, timeout, verify, cert, proxies)
+            self._last_request_timestamp = datetime.now()
+            if self._is_passive and response.status_code in self._cache_on_status:
+                if response.is_redirect:
+                    self._link_redirection(response)
+                else:
+                    self._save_response(response)
         # noinspection PyTypeChecker
         self._last_next_request_cache_url, self._next_request_cache_url = self._next_request_cache_url, None
         return response
@@ -83,39 +187,38 @@ class FileCache(HTTPAdapter):
         headers = dict(response.request.headers)
         path = self._get_filename(parse_url(response.request.url), headers)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.symlink_to(self._get_filename(parse_url(response.headers['Location']), headers))
+        target = self._get_filename(parse_url(response.headers['Location']), headers)
+        target = Path(
+            *['..' for _ in range(len(path.parts) - 2)],
+            *target.parts[1:]
+        )
+        path.symlink_to(target)
         self._log.debug(f"{self._indent}Symlinked redirection to target.")
 
-    def would_hit(self, url: Url, headers: dict) -> bool:
-        return self._get_filename(url, headers).exists()
+    def is_hit(self, url: Union[Url, str], accept_header: str = 'text/html') -> bool:
+        return self.to_filepath(url, accept_header).exists()
 
-    def list_cached(self, url: Url) -> Set[Url]:
-        urls = set()
-        dir = self._get_filename(url, {}, add_ext=False)  # with no header, ".html" is assumed. strip the ".html"
-        base_path = Path(self._path, url.host)
-        for child in dir.glob('*'):
-            if child.is_file():
-                path = str(child.relative_to(base_path).with_suffix(''))
-                if path.endswith('.html'):
-                    path = path[:-5]
-                if len(path) == 0:
-                    path = '/'
-                urls.add(Url(
-                    scheme=url.scheme,
-                    host=url.hostname,
-                    path=path,
-                    query=url.query,
-                    fragment=url.fragment
-                ))
-        return urls
+    def _load_response(self, request: PreparedRequest, filepath: Path = None) -> Optional[Response]:
+        # Get file filepath if not already given
+        if filepath is None:
+            filepath = self.to_filepath(request.url, request.headers.get('Accept', None))
 
-    def _get_response_if_hit(self, request: PreparedRequest) -> Optional[Response]:
-        url = parse_url(request.url)
-        filepath = self._get_filename(url, dict(request.headers))
-        if filepath.exists() and not self._backup_and_miss_next_request:
+        if filepath.is_file() and not self._backup_and_miss_next_request:
             self._log.debug(f"{self._indent}Cache hit at '{filepath}'")
             self._hit = True
             return self.build_response(request, load_response(filepath))
+        elif filepath.is_symlink() and not self._backup_and_miss_next_request:
+            self._log.debug(f"{self._indent}Cache hit redirection at '{filepath}'")
+            from urllib3 import HTTPResponse
+            import os
+            from io import BytesIO
+            self._log.debug(f"{self._indent}DIRECTS TO: https://{os.readlink(str(filepath)).lstrip('./')}")
+            return self.build_response(request, HTTPResponse(
+                body=BytesIO(b''),
+                headers={'Location': f"https://{os.readlink(str(filepath)).lstrip('./')}"},
+                status=302,
+                preload_content=False
+            ))
         else:
             self._log.debug(f"{self._indent}Cache miss for '{filepath}'")
         self._hit = False
