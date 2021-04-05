@@ -29,7 +29,6 @@ class FileCache(HTTPAdapter):
     _backup_path: Path = None
     _backup_and_miss_next_request: bool = False
     _indent: str = ''
-    EXTENSIONS = ['.html', '.jpg', '.jpeg', '.png', '.json']
 
     def __init__(self, path: str = '.cache', **kwargs):
         super(FileCache, self).__init__(**kwargs)
@@ -40,7 +39,6 @@ class FileCache(HTTPAdapter):
         self._cache_on_status = {200, 201, 300, 301, 302, 303, 307, 308}
         self._cache_path = Path(path)
         self._cache_path.mkdir(parents=True, exist_ok=True)
-        self._add_ext = False
 
     @property
     def is_active(self) -> bool:
