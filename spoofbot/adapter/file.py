@@ -167,9 +167,9 @@ class FileCache(HTTPAdapter):
             response = super(FileCache, self).send(request, stream, timeout, verify, cert, proxies)
             if self._is_passive and response.status_code in self._cache_on_status:
                 if response.is_redirect:
-                    self._link_redirection(response)
+                    self._link_redirection(response, filepath)
                 else:
-                    self._save_response(response)
+                    self._save_response(response, filepath)
         # noinspection PyTypeChecker
         self._last_next_request_cache_url, self._next_request_cache_url = self._next_request_cache_url, None
         return response
