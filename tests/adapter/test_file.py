@@ -27,6 +27,18 @@ class CacheAdapterTest(unittest.TestCase):
         cls.session.mount('http://', cls.cache_adapter)
         cls.session.mount('https://', cls.cache_adapter)
 
+    def test_url_to_path(self):
+        url = 'https://example.com:443/app=/?var=\\some /val&key=ä'
+        path = '.cache/example.com:443/app=/?var=%5Csome+%2Fval/key=%C3%A4'
+        cache = FileCache('.cache')
+        self.assertEqual(path, str(cache.to_filepath(url)))
+
+    def test_path_to_url(self):
+        url = 'https://example.com:443/app=?var=\\some /val&key=ä'
+        path = '.cache/example.com:443/app=/?var=%5Csome+%2Fval/key=%C3%A4'
+        cache = FileCache('.cache')
+        self.assertEqual(url, cache.to_url(path).url)
+
     def test_request_hit(self):
         self.cache_adapter.use_cache = True
         self.assertIsNotNone(self.session.get(DUCKDUCKGO_NO_REDIRECT))

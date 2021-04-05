@@ -219,3 +219,73 @@ class FileCache(HTTPAdapter):
         self._backup = None
         self._backup_path = Path()
         return True
+
+    def to_filepath(self, url: Union[Url, str], accept_header: str = 'text/html') -> Path:
+        """
+        Derives the filesystem filepath of a given url in the cache
+
+        :param url: The url to convert
+        :type url: Union[Url, str]
+        :param accept_header: The Accept header value (used for deriving the extension if there is not any already)
+        Set to None to suppress possibly adding an extension.
+        :type accept_header: str
+        :return: The filepath the url gets mapped to
+        :rtype: Path
+        """
+        # Make sure we have a proper URL
+        if isinstance(url, str):
+            url = parse_url(url)
+
+        # Append hostname to filepath
+        host = url.host + (f":{url.port}" if url.port else '')
+        path = Path(self._cache_path, host)
+
+        # Append url filepath to file filepath
+        url_path = url.path if url.path else ''
+        for path_seg in url_path.strip('/').split('/'):
+            # filepath /= Path(path_seg.encode('unicode_escape').decode('utf-8'))
+            path /= Path(path_seg)
+
+        # Append query to filepath
+        for i, (key, val) in enumerate(parse_qsl(url.query)):
+            key = quote_plus(key)
+            val = quote_plus(val)
+            if i == 0:  # Preserve the question mark for identifying the query in the filepath
+                key = f"?{key}"
+            path /= Path(f"{key}={val}")
+
+        # Maybe add an extension
+        if path.suffix == '' and accept_header is not None:
+            for mimetype in str(accept_header).split(','):
+                ext = f".{mimetype.split('/')[1].split(';')[0]}"
+                if ext in self.EXTENSIONS:
+                    path.with_suffix(ext)
+                    break
+            path.with_suffix('.html')
+        return path
+
+    def to_url(self, filepath: Union[str, os.PathLike]) -> Url:
+        """
+        Derives the url of a given filesystem path in the cache
+
+        :param filepath: The path the url gets mapped to
+        :type filepath: Union[str, os.PathLike]
+        :return: The Url that would cause a hit in the cache using the given path.
+        :rtype: Url
+        """
+        # Make sure we have a proper filepath
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+
+        host = filepath.parts[1]
+        paths = []
+        query = None
+        for part in reversed(filepath.parts[2:]):
+            paths.append(part)
+            if part.startswith('?'):  # All parts up until now were part of the query
+                queries = []
+                for query_part in reversed(paths):
+                    queries.append(unquote_plus(query_part))
+                query = '&'.join(queries)[1:]
+                paths.clear()
+        return Url('https', host=host, path='/'.join(paths), query=query)
