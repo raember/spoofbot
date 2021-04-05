@@ -292,9 +292,9 @@ class FileCache(HTTPAdapter):
         filepath = to_filepath(url, self._cache_path, self._ignore_queries)
         if filepath.exists():
             filepath.unlink()
-            self._log.debug(f"Cache hit at '{str(filepath)}'. Deleted response.")
+            self._log.debug("Deleted response.")
         else:
-            self._log.debug(f"Cache miss for '{str(filepath)}'. No response to delete.")
+            self._log.debug("No response to delete.")
 
     def delete_last(self):
         """
