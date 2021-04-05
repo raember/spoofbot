@@ -2,6 +2,7 @@ import errno
 import logging
 import os
 from pathlib import Path
+from queue import Queue
 from typing import Optional, Union
 
 from requests import Response, PreparedRequest
@@ -9,6 +10,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import parse_url, Url
 
 from spoofbot.util import load_response
+from spoofbot.util.file import to_filepath, get_symlink_path
 
 
 class FileCache(HTTPAdapter):
@@ -152,7 +154,7 @@ class FileCache(HTTPAdapter):
         self._indent = ' ' * len(request.method)
         self._last_request = request
         response = None
-        filepath = self.to_filepath(request.url, request.headers.get('Accept', None))
+        filepath = to_filepath(request.url, self._cache_path)
         if self._is_active:
             if filepath.exists():
                 self._log.debug(f"{self._indent}  Cache hit")
@@ -166,10 +168,10 @@ class FileCache(HTTPAdapter):
             self._log.debug(f"{self._indent}  Sending HTTP request")
             response = super(FileCache, self).send(request, stream, timeout, verify, cert, proxies)
             if self._is_passive and response.status_code in self._cache_on_status:
-                if response.is_redirect:
-                    self._link_redirection(response, filepath)
-                else:
-                    self._save_response(response, filepath)
+                if filepath.exists():
+                    # TODO: Handle case where response was already cached. Backup mechanism desired
+                    pass
+                self._save_response(response, filepath)
         # noinspection PyTypeChecker
         self._last_next_request_cache_url, self._next_request_cache_url = self._next_request_cache_url, None
         return response
@@ -191,7 +193,7 @@ class FileCache(HTTPAdapter):
     def _load_response(self, request: PreparedRequest, filepath: Path) -> Optional[Response]:
         # Get file filepath if not already given
         if filepath is None:
-            filepath = self.to_filepath(request.url, request.headers.get('Accept', None))
+            filepath = to_filepath(request.url, self._cache_path)
 
         if filepath.is_file() and not self._backup_and_miss_next_request:
             self._log.debug(f"{self._indent}Cache hit at '{filepath}'")
@@ -215,25 +217,30 @@ class FileCache(HTTPAdapter):
         return None
 
     def _save_response(self, response: Response, filepath: Path):
+        filepath.parent.mkdir(parents=True, exist_ok=True)
         if response.is_redirect:
-            self._link_redirection(response, filepath)
-        if filepath.exists() and self._backup_and_miss_next_request:
-            self._log.debug(f"{self._indent}Backing up old response.")
-            self._backup_and_miss_next_request = False
-            self._backup_path = filepath
-            with open(filepath, 'rb') as fp:
-                self._backup = fp.read()
-        if self._save(response.content, filepath):
-            self._log.debug(f"{self._indent}Cached answer in '{filepath}'")
+            # If the response is a redirection, use a symlink to simulate that
+            target = to_filepath(parse_url(response.headers['Location']))
+            target = get_symlink_path(filepath, target, self._cache_path)
+            filepath.symlink_to(target)
+            self._log.debug(f"{self._indent}  Symlinked redirection to target.")
+        else:
+            if filepath.exists() and self._backup_and_miss_next_request:
+                self._log.debug(f"{self._indent}  Backing up old response.")
+                self._backup_and_miss_next_request = False
+                self._backup_path = filepath
+                with open(filepath, 'rb') as fp:
+                    self._backup = fp.read()
+            if self._save(response.content, filepath):
+                self._log.debug(f"{self._indent}  Saved response to cache.")
 
     def _save(self, content: bytes, path: Path) -> bool:
-        path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(path, 'wb') as fp:
                 fp.write(content)
             return True
         except Exception as e:
-            self._log.error(f"{self._indent}Failed to save content to file: {e}")
+            self._log.error(f"{self._indent}  Failed to save content to file: {e}")
             return False
 
     def delete(self, url: Url, headers: dict):
