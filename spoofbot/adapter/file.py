@@ -166,16 +166,8 @@ class FileCache(HTTPAdapter):
         self._last_next_request_cache_url, self._next_request_cache_url = self._next_request_cache_url, None
         return response
 
-    def _link_redirection(self, response: Response, filepath: Path):
-        headers = dict(response.request.headers)
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        target = self.to_filepath(parse_url(response.headers['Location']))
-        target = Path(
-            *['..' for _ in range(len(filepath.parts) - 2)],
-            *target.parts[1:]
-        )
-        filepath.symlink_to(target)
-        self._log.debug(f"{self._indent}Symlinked redirection to target.")
+    def is_hit(self, url: Union[Url, str]) -> bool:
+        return to_filepath(url, self._cache_path).exists()
 
     def _backup_cached_response(self, request: PreparedRequest, filepath: Path):
         assert filepath.exists()
