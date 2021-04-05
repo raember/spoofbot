@@ -9,8 +9,8 @@ from PIL.Image import Image
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from requests import Response
-from tests.spoofbot.config import resolve_path
 
+from config import resolve_path
 from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux
 from spoofbot.adapter import load_har, HarCache
 from spoofbot.util import encode_form_data, TimelessRequestsCookieJar
