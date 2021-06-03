@@ -36,6 +36,7 @@ class FileCache(HTTPAdapter):
         self._cache_path.mkdir(parents=True, exist_ok=True)
         self._hit = False
         self._ignore_queries = {'_'}
+        # noinspection PyTypeChecker
         self._last_request = None
         self._backups = {}
 
@@ -260,9 +261,12 @@ class FileCache(HTTPAdapter):
         """
         filepath.parent.mkdir(parents=True, exist_ok=True)
         if response.is_redirect:  # If the response is a redirection, use a symlink to simulate that
-            target = to_filepath(parse_url(response.headers['Location']), self._cache_path, self._ignore_queries)
-            target = get_symlink_path(filepath, target, self._cache_path)
-            filepath.symlink_to(target)
+            redirect = response.headers['Location']
+            if redirect.startswith('/'):  # Host-less url
+                redirect = parse_url(response.url).host + redirect
+            target = to_filepath(parse_url(redirect), self._cache_path, self._ignore_queries)
+            symlink_path = get_symlink_path(filepath, target, self._cache_path)
+            filepath.symlink_to(symlink_path)
             self._log.debug(f"{self._indent}  Symlinked redirection to target.")
         else:
             if filepath.exists():  # Make a backup of the cached response before overwriting it
