@@ -10,6 +10,7 @@ class OS:
 
 
 class WindowsVersion(Enum):
+    Win11 = '10.0'  # Yep
     Win10 = '10.0'
     Win8_1 = '6.3'
     Win8 = '6.2'

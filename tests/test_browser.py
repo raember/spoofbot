@@ -3,6 +3,7 @@ import logging
 import unittest
 from datetime import datetime
 from io import BytesIO
+from urllib.parse import quote_plus
 
 import PIL
 from PIL.Image import Image
@@ -150,7 +151,7 @@ class WuxiaWorldTest(unittest.TestCase):
 class ChromeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.browser = Chrome()
+        cls.browser = Chrome(chrome_version=(79, 0, 3945, 130))
         cls.browser.adapter = HarCache(load_har(resolve_path('test_data/chrome_full.har')))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
@@ -530,11 +531,11 @@ class ChromeTest(unittest.TestCase):
         }, data=[
             ('custname', 'a'),
             ('custtel', 'b'),
-            ('custemail', 'c@d.ef'),
+            ('custemail', quote_plus('c@d.ef')),
             ('size', 'large'),
             ('topping', 'bacon'),
             ('topping', 'onion'),
-            ('delivery', '19:30'),
+            ('delivery', quote_plus('19:30')),
             ('comments', 'ayyy'),
         ])
         self.assertIsNotNone(response)
@@ -699,25 +700,25 @@ class FirefoxUserAgentTest(unittest.TestCase):
     def test_default(self):
         self.assertEqual(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20100101 Firefox/71.0',
-            Firefox.create_user_agent()
+            Firefox.create_user_agent(version=(71, 0))
         )
 
     def test_win(self):
         self.assertEqual(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20100101 Firefox/71.0',
-            Firefox.create_user_agent(Windows())
+            Firefox.create_user_agent(Windows(), version=(71, 0))
         )
 
     def test_mac(self):
         self.assertEqual(
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15; rv:71.0) Gecko/20100101 Firefox/71.0',
-            Firefox.create_user_agent(MacOSX())
+            Firefox.create_user_agent(MacOSX(), version=(71, 0))
         )
 
     def test_linux(self):
         self.assertEqual(
             'Mozilla/5.0 (X11; Linux x86_64; rv:71.0) Gecko/20100101 Firefox/71.0',
-            Firefox.create_user_agent(Linux())
+            Firefox.create_user_agent(Linux(), version=(71, 0))
         )
 
     def test_69_42(self):
@@ -729,7 +730,7 @@ class FirefoxUserAgentTest(unittest.TestCase):
     def test_20181001000000(self):
         self.assertEqual(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20181001000000 Firefox/71.0',
-            Firefox.create_user_agent(build_id=20181001000000)
+            Firefox.create_user_agent(version=(71, 0), build_id=20181001000000)
         )
 
 
@@ -737,25 +738,25 @@ class ChromeUserAgentTest(unittest.TestCase):
     def test_default(self):
         self.assertEqual(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36',
-            Chrome.create_user_agent()
+            Chrome.create_user_agent(version=(79, 0, 3945, 130))
         )
 
     def test_win(self):
         self.assertEqual(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36',
-            Chrome.create_user_agent(Windows())
+            Chrome.create_user_agent(Windows(), version=(79, 0, 3945, 130))
         )
 
     def test_mac(self):
         self.assertEqual(
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36',
-            Chrome.create_user_agent(MacOSX())
+            Chrome.create_user_agent(MacOSX(), version=(79, 0, 3945, 130))
         )
 
     def test_linux(self):
         self.assertEqual(
             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36',
-            Chrome.create_user_agent(Linux())
+            Chrome.create_user_agent(Linux(), version=(79, 0, 3945, 130))
         )
 
     def test_69_42(self):
@@ -767,7 +768,7 @@ class ChromeUserAgentTest(unittest.TestCase):
     def test_20181001000000(self):
         self.assertEqual(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/536.5 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/536.5',
-            Chrome.create_user_agent(webkit_version=(536, 5))
+            Chrome.create_user_agent(version=(79, 0, 3945, 130), webkit_version=(536, 5))
         )
 
 

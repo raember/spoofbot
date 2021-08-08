@@ -2,11 +2,11 @@ import mimetypes
 from datetime import timedelta, datetime
 from enum import Enum
 from http.cookiejar import CookieJar
-from logging import Logger, getLogger
 from time import sleep
 from typing import List, Optional, AnyStr, TypeVar, TextIO, Tuple, Callable, Dict
 from urllib.parse import urlparse, urljoin
 
+from loguru import logger
 from requests import Response, Session, Request, PreparedRequest, codes
 # noinspection PyProtectedMember
 from requests._internal_utils import to_native_string
@@ -84,7 +84,6 @@ class Browser(Session):
     Specific browsers must inherit from this class and overwrite the abstract methods
     """
 
-    _log: Logger
     _user_agent: str
     _accept: List[MimeTypeTag]
     _accept_language: List[LanguageTag]
@@ -106,7 +105,6 @@ class Browser(Session):
 
     def __init__(self):
         super(Browser, self).__init__()
-        self._log = getLogger(self.__class__.__name__)
         self._user_agent = ''
         self._accept = []
         self._accept_language = []
@@ -665,7 +663,7 @@ class Browser(Session):
                 yield resp
 
     def _report_request(self, method: str, url: str):
-        self._log.debug(f"\033[36m{method}\033[0m {url}")  # 36 = cyan fg
+        logger.debug(f"\033[36m{method}\033[0m {url}")  # 36 = cyan fg
 
     def _report_response(self, response: Response):
         fg_red = 31
@@ -673,6 +671,7 @@ class Browser(Session):
         rev_vd = 7
         fg_grn = 32
         fg_wht = 97
+        fg_lred = 91
         color, msg = {
             500: (fg_red, 'Internal Server Error'),
             501: (fg_red, 'Not Implemented'),
@@ -736,9 +735,9 @@ class Browser(Session):
             101: (fg_wht, 'Switching Protocols'),
             102: (fg_wht, 'Processing'),  # WebDAV
             103: (fg_wht, 'Early Hints'),
-        }.get(response.status_code, (91, 'UNKNOWN'))
-        self._log.debug(f"{' ' * len(response.request.method)} \033[{color}m← {response.status_code} {msg}\033[0m "
-                        f"{response.headers.get('Content-Type', '-')}")
+        }.get(response.status_code, (fg_lred, 'UNKNOWN'))
+        logger.debug(f"{' ' * len(response.request.method)} \033[{color}m← {response.status_code} {msg}\033[0m "
+                     f"{response.headers.get('Content-Type', '-')}")
 
     def _get_default_headers(self, method: str, url: Url, user_activation: bool) -> CaseInsensitiveDict:
         """Provides the default headers the browser should send when connecting to an endpoint
@@ -775,30 +774,33 @@ class Browser(Session):
         self._did_wait = False
         adapter = self.get_adapter('https://')
         if isinstance(adapter, HarCache) or isinstance(adapter, FileCache) and adapter.hit:
-            self._log.debug("Last request was a hit in cache. No need to wait.")
+            logger.debug("Last request was a hit in cache. No need to wait.")
             return
         if headers is None:
             headers = {}
         headers.setdefault('Accept', 'text/html')
         if url is not None and isinstance(adapter, FileCache) and adapter.is_hit(url, headers):
-            self._log.debug("Request will be a hit in cache. No need to wait.")
+            logger.debug("Request will be a hit in cache. No need to wait.")
             return
         now = datetime.now()
         wait_until = self._last_request_timestamp + self._request_timeout
         if now < wait_until:
             self._waiting_period = wait_until - now
             self._did_wait = True
-            self._log.debug(f"Waiting for {self._waiting_period.total_seconds()} seconds.")
+            logger.debug(f"Waiting for {self._waiting_period.total_seconds()} seconds.")
             sleep(self._waiting_period.total_seconds())
 
     def _adapt_redirection(self, request: PreparedRequest):
         pass
 
 
+FF_NEWEST = (90, 0)
+
+
 class Firefox(Browser):
     def __init__(self,
                  os=Windows(),
-                 ff_version=(85, 0),
+                 ff_version=FF_NEWEST,
                  build_id=20100101,
                  do_not_track=False,
                  upgrade_insecure_requests=True):
@@ -837,7 +839,7 @@ class Firefox(Browser):
         ]
 
     @staticmethod
-    def create_user_agent(os=Windows(), version=(71, 0), build_id=20100101) -> str:
+    def create_user_agent(os=Windows(), version=FF_NEWEST, build_id=20100101) -> str:
         """Creates a user agent string for Firefox
 
         :param os: The underlying operating system (default :py:class:`Windows`).
@@ -851,11 +853,15 @@ class Firefox(Browser):
                f"Firefox/{ff_version}"
 
 
+CHROME_NEWEST = (92, 0, 4495, 0)
+WEBKIT_NEWEST = (537, 36)
+
+
 class Chrome(Browser):
     def __init__(self,
                  os=Windows(),
-                 chrome_version=(79, 0, 3945, 130),
-                 webkit_version=(537, 36),
+                 chrome_version=CHROME_NEWEST,
+                 webkit_version=WEBKIT_NEWEST,
                  do_not_track=False,
                  upgrade_insecure_requests=True):
         super(Chrome, self).__init__()
@@ -898,7 +904,7 @@ class Chrome(Browser):
         ]
 
     @staticmethod
-    def create_user_agent(os=Windows(), version=(79, 0, 3945, 130), webkit_version=(537, 36)) -> str:
+    def create_user_agent(os=Windows(), version=CHROME_NEWEST, webkit_version=WEBKIT_NEWEST) -> str:
         """Creates a user agent string for Firefox
 
         :param os: The underlying operating system (default :py:class:`Windows`).

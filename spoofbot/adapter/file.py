@@ -1,19 +1,18 @@
 import errno
-import logging
 import os
 from pathlib import Path
 from typing import Union
 
+from loguru import logger
 from requests import Response, PreparedRequest
 from requests.adapters import HTTPAdapter
 from urllib3.util import parse_url, Url
 
 from spoofbot.util import load_response
-from spoofbot.util.file import to_filepath, get_symlink_path
+from spoofbot.util.file import to_filepath, get_symlink_path, CACHE_FILE_SUFFIX
 
 
 class FileCache(HTTPAdapter):
-    _log: logging.Logger
     _is_active: bool = True
     _is_passive: bool = True
     _is_offline: bool = False
@@ -25,14 +24,13 @@ class FileCache(HTTPAdapter):
     _backups: dict[PreparedRequest, bytes] = {}
     _indent: str = ''
 
-    def __init__(self, path: str = '.cache', **kwargs):
+    def __init__(self, path: Union[str, os.PathLike] = CACHE_FILE_SUFFIX, **kwargs):
         super(FileCache, self).__init__(**kwargs)
-        self._log = logging.getLogger(self.__class__.__name__)
         self._is_active = True
         self._is_passive = True
         self._is_offline = False
         self._cache_on_status = {200, 201, 300, 301, 302, 303, 307, 308}
-        self._cache_path = Path(path)
+        self._cache_path = Path(path) if isinstance(path, str) else path
         self._cache_path.mkdir(parents=True, exist_ok=True)
         self._hit = False
         self._ignore_queries = {'_'}
@@ -43,7 +41,7 @@ class FileCache(HTTPAdapter):
     @property
     def is_active(self) -> bool:
         """
-        Return the cache state to active.
+        Get whether the cache is in active mode.
 
         If true, the FileCache will check new requests against the local cache for hits.
         Otherwise the FileCache will not check for hits.
@@ -53,18 +51,21 @@ class FileCache(HTTPAdapter):
     @is_active.setter
     def is_active(self, value: bool):
         """
-        Set whether the cache state is in active mode.
+        Set whether the cache is in active mode.
 
         If set to True, the FileCache will check new requests against the local cache for hits.
+        Otherwise the FileCache will not check for hits.
         :param value: The new state of the FileCache
         :type value: bool
         """
         self._is_active = value
+        if not self._is_active and self._is_offline:
+            logger.warning("Active mode requires offline mode to be disabled.")
 
     @property
     def is_passive(self) -> bool:
         """
-        Get whether the cache state is in passive mode.
+        Get whether the cache is in passive mode.
 
         If true, the FileCache will cache the answer of a successful request in the cache.
         Otherwise the FileCache will not cache the answer.
@@ -74,9 +75,9 @@ class FileCache(HTTPAdapter):
     @is_passive.setter
     def is_passive(self, value: bool):
         """
-        Set whether the cache state is in passive mode.
+        Set whether the cache is in passive mode.
 
-        If set to True, the FileCache will cache the answer of a successful request in the cache.
+        If true, the FileCache will cache the answer of a successful request in the cache.
         Otherwise the FileCache will not cache the answer.
         :param value: The new state of the FileCache
         :type value: bool
@@ -86,24 +87,28 @@ class FileCache(HTTPAdapter):
     @property
     def is_offline(self) -> bool:
         """
-        Get whether the cache state is in offline mode.
+        Get whether the cache is in offline mode.
 
         If true, the FileCache will throw an exception if no cache hit occurs.
         Otherwise the FileCache will allow HTTP requests to remotes.
+        Offline mode does not work if active mode is not enabled.
         """
         return self._is_offline
 
     @is_offline.setter
     def is_offline(self, value: bool):
         """
-        Set whether the cache state is in offline mode.
+        Set whether the state is in offline mode.
 
         If set to True, the FileCache will throw an exception if no cache hit occurs.
         Otherwise the FileCache will allow HTTP requests to remotes.
+        Offline mode does not work if active mode is disabled.
         :param value: The new state of the FileCache
         :type value: bool
         """
         self._is_offline = value
+        if self._is_offline and not self._is_active:
+            logger.warning("Offline mode requires active mode to be enabled.")
 
     @property
     def cache_on_status(self) -> set[int]:
@@ -133,19 +138,19 @@ class FileCache(HTTPAdapter):
         return self._cache_path
 
     @cache_path.setter
-    def cache_path(self, path: Path):
+    def cache_path(self, path: Union[str, os.PathLike]):
         """
         The root path of the cache.
 
         :param path: The new path
-        :type path: Path
+        :type path: Union[str, os.PathLike]
         """
-        self._cache_path = path
+        self._cache_path = Path(path) if isinstance(path, str) else path
 
     @property
     def hit(self) -> bool:
         """
-        True if the last processed requests was a hit in the cache
+        True if the last processed request was a hit in the cache
         """
         return self._hit
 
@@ -185,10 +190,10 @@ class FileCache(HTTPAdapter):
         filepath = to_filepath(request.url, self._cache_path, self._ignore_queries)
         if self._is_active:  # Check for a cached answer
             if filepath.exists():
-                self._log.debug(f"{self._indent}  Cache hit")
+                logger.debug(f"{self._indent}  Cache hit")
                 self._hit = True
                 return self._load_response(request, filepath)
-        self._log.debug(f"{self._indent}  Cache miss")
+        logger.debug(f"{self._indent}  Cache miss")
         self._hit = False
 
         # In offline mode, we cannot make new HTTP requests for cache misses
@@ -264,18 +269,19 @@ class FileCache(HTTPAdapter):
             redirect = response.headers['Location']
             if redirect.startswith('/'):  # Host-less url
                 redirect = parse_url(response.url).host + redirect
-            target = to_filepath(parse_url(redirect), self._cache_path, self._ignore_queries)
+            redirect_url = parse_url(redirect)
+            target = to_filepath(redirect_url, self._cache_path, self._ignore_queries)
             symlink_path = get_symlink_path(filepath, target, self._cache_path)
             filepath.symlink_to(symlink_path)
-            self._log.debug(f"{self._indent}  Symlinked redirection to target.")
+            logger.debug(f"{self._indent}  Symlinked redirection to target.")
         else:
             if filepath.exists():  # Make a backup of the cached response before overwriting it
-                self._log.debug(f"{self._indent}  Backing up old response.")
+                logger.debug(f"{self._indent}  Backing up old response.")
                 self._backup_path = filepath
                 with open(filepath, 'rb') as fp:
                     self._backups[response.request] = fp.read()
             if self._save(response.content, filepath):
-                self._log.debug(f"{self._indent}  Saved response in cache.")
+                logger.debug(f"{self._indent}  Saved response in cache.")
 
     def _save(self, content: bytes, path: Path) -> bool:
         try:
@@ -283,7 +289,7 @@ class FileCache(HTTPAdapter):
                 fp.write(content)
             return True
         except Exception as e:
-            self._log.error(f"{self._indent}  Failed to save content to file: {e}")
+            logger.error(f"{self._indent}  Failed to save content to file: {e}")
             return False
 
     def delete(self, url: Union[str, os.PathLike]):
@@ -296,9 +302,9 @@ class FileCache(HTTPAdapter):
         filepath = to_filepath(url, self._cache_path, self._ignore_queries)
         if filepath.exists():
             filepath.unlink()
-            self._log.debug("Deleted response.")
+            logger.debug("Deleted response.")
         else:
-            self._log.debug("No response to delete.")
+            logger.debug("No response to delete.")
 
     def delete_last(self):
         """
@@ -317,16 +323,16 @@ class FileCache(HTTPAdapter):
         :rtype: bool
         """
         if request not in self._backups.keys():
-            self._log.error("No backup available")
+            logger.error("No backup available")
             return False
-        self._log.debug("Restoring backup")
+        logger.debug("Restoring backup")
         filepath = to_filepath(request.url, self._cache_path, self._ignore_queries)
         assert filepath.exists()
         try:
             with open(filepath, 'wb') as fp:
                 fp.write(self._backups[request])
         except Exception as e:
-            self._log.error(f"Failed to save content to file: {e}")
+            logger.error(f"Failed to save content to file: {e}")
             return False
         del self._backups[request]
         return True

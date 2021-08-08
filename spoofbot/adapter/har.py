@@ -1,10 +1,10 @@
 """Provides functionality to inject HAR files as basis for a session to run on"""
 
 import json
-import logging
 import os
 from typing import List, MutableMapping
 
+from loguru import logger
 from requests import PreparedRequest, Session, Response
 from requests.adapters import HTTPAdapter
 from requests.cookies import extract_cookies_to_jar
@@ -17,7 +17,6 @@ from spoofbot.util import request_from_entry, response_from_entry, cookie_header
 class HarCache(HTTPAdapter):
     """An adapter to be registered in a Session.."""
     _data: dict = None
-    _log: logging.Logger
     _match_header_order: bool = True
     _match_headers: bool = True
     _match_data: bool = True
@@ -27,9 +26,12 @@ class HarCache(HTTPAdapter):
 
     def __init__(self, har_data: dict, session: Session = None, **kwargs):
         super(HarCache, self).__init__(**kwargs)
-        self._log = logging.getLogger(self.__class__.__name__)
         self._data = har_data
-        self._log.info(f"Using HAR file from {str(self)}")
+        self._match_header_order = True
+        self._match_headers = True
+        self._match_data = True
+        self._delete_after_matching = True
+        self._encode_post_data = True
         if session is None:
             session = Session()
             session.headers.clear()
@@ -100,17 +102,17 @@ class HarCache(HTTPAdapter):
         for i, entry in enumerate(self.entries):
             cached_request = self._session.prepare_request(request_from_entry(entry, self._encode_post_data))
             if self._match_requests(request, cached_request):
-                self._log.debug(f"{indent}Request matched")
+                logger.debug(f"{indent}Request matched")
                 for key, val in request.headers.items():
                     if key == 'Cookie':
-                        self._log.debug(f"{indent}  · {key}:")
+                        logger.debug(f"{indent}  · {key}:")
                         for c_key, c_val in cookie_header_to_dict(val).items():
-                            self._log.debug(f"{indent}      · {c_key}: {c_val}")
+                            logger.debug(f"{indent}      · {c_key}: {c_val}")
                     else:
-                        self._log.debug(f"{indent}  · {key}: {val}")
+                        logger.debug(f"{indent}  · {key}: {val}")
                 if self._delete_after_matching:
                     del self.entries[i]  # Delete entry as we already matched it once.
-                    self._log.debug(f"{indent}Deleted matched entry from list")
+                    logger.debug(f"{indent}Deleted matched entry from list")
                 response = self.build_response(request, response_from_entry(entry))
                 return response
             self._session.prepare_request(request_from_entry(entry, self._encode_post_data))
@@ -118,10 +120,10 @@ class HarCache(HTTPAdapter):
 
     def _print_diff(self, name: str, expected: str, actual: str, indent_level: int):
         indent = ' ' * indent_level
-        self._log.debug(f"{indent}Request {name} does not match:")
-        self._log.debug(f"{indent}  {actual}")
-        self._log.debug(f"{indent}  does not equal expected:")
-        self._log.debug(f"{indent}  {expected}")
+        logger.debug(f"{indent}Request {name} does not match:")
+        logger.debug(f"{indent}  {actual}")
+        logger.debug(f"{indent}  does not equal expected:")
+        logger.debug(f"{indent}  {expected}")
 
     def _match_requests(self, request: PreparedRequest, cached_request: PreparedRequest) -> bool:
         indent_level = len(request.method)
@@ -141,7 +143,7 @@ class HarCache(HTTPAdapter):
                     success = False
                     self._print_diff('data', cached_request.body, request.body, indent_level)
             if not success:
-                self._log.debug(indent + '=' * 16)  # To easily distinguish multiple tested requests
+                logger.debug(indent + '=' * 16)  # To easily distinguish multiple tested requests
             return success
         return False
 
@@ -174,21 +176,21 @@ class HarCache(HTTPAdapter):
             if key not in cached_dict:
                 redundant_keys.append(key)
         if len(missing_keys) > 0:
-            self._log.debug(f"{indent}Request {name} are missing the following entries:")
+            logger.debug(f"{indent}Request {name} are missing the following entries:")
             for key in missing_keys:
-                self._log.debug(f"{indent}  - '{key}': '{cached_dict[key]}'")
+                logger.debug(f"{indent}  - '{key}': '{cached_dict[key]}'")
             verdict = False
         if len(redundant_keys) > 0:
-            self._log.debug(f"{indent}Request {name} have the following redundant entries:")
+            logger.debug(f"{indent}Request {name} have the following redundant entries:")
             for key in redundant_keys:
-                self._log.debug(f"{indent}  + '{key}': '{request_dict[key]}'")
+                logger.debug(f"{indent}  + '{key}': '{request_dict[key]}'")
             verdict = False
         if len(mismatching_keys) > 0:
-            self._log.debug(f"{indent}Request {name} have the following mismatching entries:")
+            logger.debug(f"{indent}Request {name} have the following mismatching entries:")
             for key in mismatching_keys:
-                self._log.debug(f"{indent}  · '{key}': '{request_dict[key]}'")
-                self._log.debug(f"{indent}    {' ' * (len(key) + 2)}  does not equal expected {name[:-1]}:")
-                self._log.debug(f"{indent}    {' ' * (len(key) + 2)}  '{cached_dict[key]}'")
+                logger.debug(f"{indent}  · '{key}': '{request_dict[key]}'")
+                logger.debug(f"{indent}    {' ' * (len(key) + 2)}  does not equal expected {name[:-1]}:")
+                logger.debug(f"{indent}    {' ' * (len(key) + 2)}  '{cached_dict[key]}'")
             verdict = False
         return verdict
 

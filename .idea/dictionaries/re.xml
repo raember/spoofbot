@@ -8,8 +8,10 @@
       <w>duckduckgo</w>
       <w>httpbin</w>
       <w>khtml</w>
+      <w>loguru</w>
       <w>mimetype</w>
       <w>paintworklet</w>
+      <w>publicsuffix</w>
       <w>sharedworker</w>
       <w>spoofbot</w>
       <w>toposort</w>

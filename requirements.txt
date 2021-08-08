@@ -5,3 +5,4 @@ pillow
 toposort
 brotli
 publicsuffix2
+loguru
