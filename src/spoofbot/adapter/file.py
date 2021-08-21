@@ -9,34 +9,82 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import parse_url, Url
 
 from spoofbot.util import load_response
-from spoofbot.util.file import to_filepath, get_symlink_path, CACHE_FILE_SUFFIX
+from spoofbot.util.file import to_filepath, get_symlink_path, CACHE_DEFAULT_PATH, \
+    DEFAULT_CACHEABLE_STATUSES, IGNORE_QUERIES
 
 
 class FileCache(HTTPAdapter):
-    _is_active: bool = True
-    _is_passive: bool = True
-    _is_offline: bool = False
-    _cache_on_status: set = {200, 201, 300, 301, 302, 303, 307, 308}
-    _cache_path: Path = None
-    _hit: bool = False
-    _ignore_queries: set[str] = {'_'}
+    _cache_path: Path
+    _is_active: bool
+    _is_passive: bool
+    _is_offline: bool
+    _cache_on_status: set[int]
+    _ignore_queries: set[str]
+    _hit: bool
     _last_request: PreparedRequest
-    _backups: dict[PreparedRequest, bytes] = {}
-    _indent: str = ''
+    _backup: tuple[Path, bytes]
+    _indent: str
 
-    def __init__(self, path: Union[str, os.PathLike] = CACHE_FILE_SUFFIX, **kwargs):
+    def __init__(
+            self,
+            path: Union[str, os.PathLike] = CACHE_DEFAULT_PATH,
+            active: bool = True,
+            passive: bool = True,
+            offline: bool = False,
+            cache_on_status: set[int] = None,
+            ignore_queries: set[str] = None,
+            **kwargs
+    ):
+        """Initializes the file cache.
+
+        :param path: The path for the root of the file cache
+        :type path: Union[str, os.PathLike]
+        :param active: Set the cache in active mode.
+        :type active: bool
+        :param passive: Set the cache in passive mode.
+        :type passive: bool
+        :param offline: Set the cache in strict offline mode.
+        :type offline: bool
+        :param cache_on_status: Only cache responses on these status codes.
+        :type cache_on_status: set[int]
+        :param ignore_queries: Ignore these queries when determining the file path.
+        :type ignore_queries: set[str]
+        :param kwargs: Additional args to be passed to the HTTPAdapter constructor
+        :type kwargs: dict
+        """
         super(FileCache, self).__init__(**kwargs)
-        self._is_active = True
-        self._is_passive = True
-        self._is_offline = False
-        self._cache_on_status = {200, 201, 300, 301, 302, 303, 307, 308}
         self._cache_path = Path(path) if isinstance(path, str) else path
         self._cache_path.mkdir(parents=True, exist_ok=True)
+        self._is_active = active
+        self._is_passive = passive
+        self._is_offline = offline
+        if cache_on_status is None:
+            cache_on_status = DEFAULT_CACHEABLE_STATUSES
+        self._cache_on_status = cache_on_status
+        if ignore_queries is None:
+            ignore_queries = IGNORE_QUERIES
+        self._ignore_queries = ignore_queries
         self._hit = False
-        self._ignore_queries = {'_'}
         # noinspection PyTypeChecker
         self._last_request = None
-        self._backups = {}
+        self._indent = ''
+
+    @property
+    def cache_path(self) -> Path:
+        """
+        The root path of the cache.
+        """
+        return self._cache_path
+
+    @cache_path.setter
+    def cache_path(self, path: Union[str, os.PathLike]):
+        """
+        The root path of the cache.
+
+        :param path: The new path
+        :type path: Union[str, os.PathLike]
+        """
+        self._cache_path = Path(path) if isinstance(path, str) else path
 
     @property
     def is_active(self) -> bool:
@@ -131,30 +179,6 @@ class FileCache(HTTPAdapter):
         self._cache_on_status = status_codes
 
     @property
-    def cache_path(self) -> Path:
-        """
-        The root path of the cache.
-        """
-        return self._cache_path
-
-    @cache_path.setter
-    def cache_path(self, path: Union[str, os.PathLike]):
-        """
-        The root path of the cache.
-
-        :param path: The new path
-        :type path: Union[str, os.PathLike]
-        """
-        self._cache_path = Path(path) if isinstance(path, str) else path
-
-    @property
-    def hit(self) -> bool:
-        """
-        True if the last processed request was a hit in the cache
-        """
-        return self._hit
-
-    @property
     def ignore_queries(self) -> set[str]:
         """
         Set of query parameters to ignore when mapping a URL to a path.
@@ -174,18 +198,17 @@ class FileCache(HTTPAdapter):
         self._ignore_queries = params
 
     @property
-    def backups(self) -> dict[PreparedRequest, bytes]:
+    def hit(self) -> bool:
         """
-        The backup content of responses which were overwritten (by being in inactive and passive mode)
-
-        :return: A dict mapping requests to their original content
-        :rtype: dict[PreparedRequest, bytes]
+        True if the last processed request was a hit in the cache
         """
-        return self._backups
+        return self._hit
 
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None
              ) -> Response:
+        # Set indentation for aligned log messages
         self._indent = ' ' * len(request.method)
+
         self._last_request = request
         filepath = to_filepath(request.url, self._cache_path, self._ignore_queries)
         if self._is_active:  # Check for a cached answer

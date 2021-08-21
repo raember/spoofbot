@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from spoofbot.util.file import get_symlink_path, to_filepath, to_url
+from spoofbot.util import get_symlink_path, to_filepath, to_url
 
 
 class PathTraversalTest(unittest.TestCase):

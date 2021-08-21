@@ -6,3 +6,4 @@ toposort
 brotli
 publicsuffix2
 loguru
+mitmproxy

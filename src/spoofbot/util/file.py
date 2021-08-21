@@ -51,18 +51,20 @@ def load_response(filepath: Path) -> HTTPResponse:
     )
 
 
+CACHE_DEFAULT_PATH = '.cache'
 CACHE_FILE_SUFFIX = '.cache'
+DEFAULT_CACHEABLE_STATUSES = {200, 201, 300, 301, 302, 303, 307, 308}
 IGNORE_QUERIES = {'_'}
 
 
 def to_filepath(
         url: Union[Url, str],
-        root_path: Union[str, PathLike] = Path('.'),
+        root_path: Union[str, PathLike] = CACHE_DEFAULT_PATH,
         ignore_queries: set[str] = None) -> Path:
     """
-    Derives the filesystem filepath of a given url in the cache
+    Maps the given url to a file path in the cache.
 
-    :param url: The url to convert
+    :param url: The url to map
     :type url: Union[Url, str]
     :param root_path: The base path
     :type root_path: Union[str, PathLike]
@@ -77,20 +79,20 @@ def to_filepath(
 
     # Make sure we have a proper root path
     if isinstance(root_path, str):
-        root_path = Path(root_path)
+        path = Path(root_path)
+    else:
+        path = root_path
 
     if ignore_queries is None:
         ignore_queries = IGNORE_QUERIES
 
     # Append hostname to filepath
     host = url.host + (f":{url.port}" if url.port else '')
-    path = Path(root_path, host)
+    path /= host
 
     # Append url filepath to file filepath
-    url_path = url.path if url.path else ''
-    for path_seg in url_path.strip('/').split('/'):
-        # filepath /= Path(path_seg.encode('unicode_escape').decode('utf-8'))
-        path /= Path(path_seg)
+    if url.path:
+        path /= url.path.strip('/')
 
     # Append query to filepath
     for i, (key, val) in enumerate(parse_qsl(url.query)):
@@ -100,16 +102,16 @@ def to_filepath(
         val = quote_plus(val)
         if i == 0:  # Preserve the question mark for identifying the query in the filepath
             key = f"?{key}"
-        path /= Path(f"{key}={val}")
+        path /= f"{key}={val}"
     return path.parent / (path.name + CACHE_FILE_SUFFIX)  # Suffix minimizes clash between files and directories
 
 
-def to_url(filepath: Union[str, PathLike], root_path: Union[str, PathLike] = Path('.')) -> Url:
+def to_url(filepath: Union[str, PathLike], root_path: Union[str, PathLike] = CACHE_DEFAULT_PATH) -> Url:
     """
     Derives the url of a given filesystem path in the cache
 
     :param filepath: The path the url gets mapped to
-    :type filepath: Union[str, os.PathLike]
+    :type filepath: Union[str, PathLike]
     :param root_path: The base path
     :type root_path: Union[str, PathLike]
     :return: The Url that would cause a hit in the cache using the given path.

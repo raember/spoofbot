@@ -1,9 +1,10 @@
 import json
 import logging
 import unittest
+from base64 import b64decode
 from datetime import datetime
 from io import BytesIO
-from urllib.parse import quote_plus
+from pathlib import Path
 
 import PIL
 from PIL.Image import Image
@@ -13,8 +14,8 @@ from requests import Response
 
 from config import resolve_path
 from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux
-from spoofbot.adapter import load_har, HarCache
-from spoofbot.util import encode_form_data, TimelessRequestsCookieJar
+from spoofbot.adapter import RecordingCache
+from spoofbot.util import encode_form_data, TimelessRequestsCookieJar, load_har
 
 logging.basicConfig(level=logging.DEBUG)
 # noinspection SpellCheckingInspection
@@ -23,6 +24,8 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 logging.getLogger('chardet.charsetprober').setLevel(logging.INFO)
 # noinspection SpellCheckingInspection
 logging.getLogger('chardet.universaldetector').setLevel(logging.INFO)
+
+p = Path(__file__).parent.parent
 
 
 class WuxiaWorldTest(unittest.TestCase):
@@ -36,7 +39,7 @@ class WuxiaWorldTest(unittest.TestCase):
             MimeTypeTag("application", "xml", q=0.9),
             MimeTypeTag("*", "*", q=0.8)
         ]
-        cls.browser.adapter = HarCache(load_har(resolve_path('../test_data/www.wuxiaworld.com_Archive_ALL.har')))
+        cls.browser.adapter = RecordingCache(load_har(p / 'test_data/www.wuxiaworld.com_Archive_ALL.har'))
 
     def test_01_main_site(self):
         self.browser.transfer_encoding = 'Trailers'
@@ -52,13 +55,13 @@ class WuxiaWorldTest(unittest.TestCase):
         doc = BeautifulSoup(resp.text, features="html.parser")
         # noinspection PyTypeChecker
         rvt_input: Tag = doc.select_one('input[name="__RequestVerificationToken"]')
-        data = [
+        data = '&'.join(map('='.join, [
             ('Email', auth['Email']),
             ('Password', auth['Password']),
             ('RememberMe', 'true'),
             ('__RequestVerificationToken', rvt_input.get('value')),
             ('RememberMe', 'false')
-        ]
+        ]))
         self.browser.adapter.match_header_order = False
         self.browser.adapter.encode_post_data = True
         resp = self.browser.post('https://www.wuxiaworld.com/account/login', headers={
@@ -135,7 +138,7 @@ class WuxiaWorldTest(unittest.TestCase):
                 'Origin': None,
             })
         self.assertEqual(200, resp.status_code)
-        img: Image = PIL.Image.open(BytesIO(resp.content))
+        img: Image = PIL.Image.open(BytesIO(b64decode(resp.content)))
         self.assertEqual(208, img.width)
         self.assertEqual(277, img.height)
 
@@ -152,7 +155,7 @@ class ChromeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Chrome(chrome_version=(79, 0, 3945, 130))
-        cls.browser.adapter = HarCache(load_har(resolve_path('test_data/chrome_full.har')))
+        cls.browser.adapter = RecordingCache(load_har(p / 'test_data/chrome_full.har'))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()
@@ -531,11 +534,11 @@ class ChromeTest(unittest.TestCase):
         }, data=[
             ('custname', 'a'),
             ('custtel', 'b'),
-            ('custemail', quote_plus('c@d.ef')),
+            ('custemail', 'c@d.ef'),
             ('size', 'large'),
             ('topping', 'bacon'),
             ('topping', 'onion'),
-            ('delivery', quote_plus('19:30')),
+            ('delivery', '19:30'),
             ('comments', 'ayyy'),
         ])
         self.assertIsNotNone(response)
@@ -545,7 +548,7 @@ class FirefoxTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Firefox(ff_version=(72, 0))
-        cls.browser.adapter = HarCache(load_har(resolve_path('../test_data/ff_full.har')))
+        cls.browser.adapter = RecordingCache(load_har(p / 'test_data/ff_full.har'))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()

@@ -1,7 +1,9 @@
 """Used for storing tests related data like paths for reuse"""
 from os.path import dirname, abspath, join
+from pathlib import Path
 from typing import Tuple
 
+print(str(Path(__file__).parent.parent))
 ROOT = dirname(dirname(abspath(__file__)))
 
 

@@ -1,8 +1,6 @@
 """Provides functionality to inject HAR files as basis for a session to run on"""
 
-import json
-import os
-from typing import List, MutableMapping
+from typing import MutableMapping
 
 from loguru import logger
 from requests import PreparedRequest, Session, Response
@@ -10,44 +8,61 @@ from requests.adapters import HTTPAdapter
 from requests.cookies import extract_cookies_to_jar
 from requests.structures import CaseInsensitiveDict
 from requests.utils import get_encoding_from_headers
+from urllib3.util import Url, parse_url
 
-from spoofbot.util import request_from_entry, response_from_entry, cookie_header_to_dict, TimelessRequestsCookieJar
+from spoofbot.util import cookie_header_to_dict, TimelessRequestsCookieJar
 
 
-class HarCache(HTTPAdapter):
-    """An adapter to be registered in a Session.."""
-    _data: dict = None
-    _match_header_order: bool = True
-    _match_headers: bool = True
-    _match_data: bool = True
-    _delete_after_matching: bool = True
-    _encode_post_data: bool = False
+class RecordingCache(HTTPAdapter):
+    """An adapter to be registered in a Session."""
+    _entries: dict[Url, list[tuple[PreparedRequest, Response]]]
+    _match_header_order: bool
+    _match_headers: bool
+    _match_data: bool
+    _delete_after_matching: bool
     _session: Session
 
-    def __init__(self, har_data: dict, session: Session = None, **kwargs):
-        super(HarCache, self).__init__(**kwargs)
-        self._data = har_data
-        self._match_header_order = True
-        self._match_headers = True
-        self._match_data = True
-        self._delete_after_matching = True
-        self._encode_post_data = True
+    def __init__(
+            self,
+            entries: dict[Url, list[tuple[PreparedRequest, Response]]],
+            match_header_order: bool = True,
+            match_headers: bool = True,
+            match_data: bool = True,
+            delete_after_matching: bool = True,
+            session: Session = None,
+            **kwargs
+    ):
+        """Creates a new recording-file-based cache
+
+        :param entries: The prepared recordings
+        :type entries: dict[Url, list[tuple[PreparedRequest, Response]]]
+        :param match_header_order: Whether to require the order of the headers to match when looking for hits
+        :type match_header_order: bool
+        :param match_headers: Whether to require the headers to match when looking for hits
+        :type match_headers: bool
+        :param match_data: Whether to require the request data to match when looking for hits
+        :type match_data: bool
+        :param delete_after_matching: Whether to delete hits from the cache once hit
+        :type delete_after_matching: bool
+        :param session: The session to use when building responses
+        :type session: Session
+        :param kwargs:
+        :type kwargs:
+        """
+        super(RecordingCache, self).__init__(**kwargs)
+        self._entries = entries
+        self._match_header_order = match_header_order
+        self._match_headers = match_headers
+        self._match_data = match_data
+        self._delete_after_matching = delete_after_matching
         if session is None:
             session = Session()
             session.headers.clear()
         self._session = session
 
     @property
-    def creator(self) -> str:
-        return self._data['log'].get('creator', {}).get('name', '')
-
-    @property
-    def creator_version(self) -> str:
-        return self._data['log'].get('creator', {}).get('version', '')
-
-    @property
-    def entries(self) -> List[dict]:
-        return self._data['log']['entries']
+    def entries(self) -> dict[Url, list[tuple[PreparedRequest, Response]]]:
+        return self._entries
 
     @property
     def match_header_order(self) -> bool:
@@ -82,14 +97,6 @@ class HarCache(HTTPAdapter):
         self._delete_after_matching = value
 
     @property
-    def encode_post_data(self) -> bool:
-        return self._encode_post_data
-
-    @encode_post_data.setter
-    def encode_post_data(self, value: bool):
-        self._encode_post_data = value
-
-    @property
     def session(self) -> Session:
         return self._session
 
@@ -99,24 +106,15 @@ class HarCache(HTTPAdapter):
 
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None):
         indent = ' ' * len(request.method)
-        for i, entry in enumerate(self.entries):
-            cached_request = self._session.prepare_request(request_from_entry(entry, self._encode_post_data))
+        possible_requests = self._entries.get(parse_url(request.url), [])
+        for i, (cached_request, cached_response) in enumerate(possible_requests):
             if self._match_requests(request, cached_request):
                 logger.debug(f"{indent}Request matched")
-                for key, val in request.headers.items():
-                    if key == 'Cookie':
-                        logger.debug(f"{indent}  · {key}:")
-                        for c_key, c_val in cookie_header_to_dict(val).items():
-                            logger.debug(f"{indent}      · {c_key}: {c_val}")
-                    else:
-                        logger.debug(f"{indent}  · {key}: {val}")
                 if self._delete_after_matching:
-                    del self.entries[i]  # Delete entry as we already matched it once.
-                    logger.debug(f"{indent}Deleted matched entry from list")
-                response = self.build_response(request, response_from_entry(entry))
-                return response
-            self._session.prepare_request(request_from_entry(entry, self._encode_post_data))
-        raise Exception("No matching entry in HAR found")
+                    del possible_requests[i]  # Delete entry as we already matched it once.
+                    logger.debug(f"{indent}Deleted matched request and response")
+                return self.build_response(request, cached_response)
+        raise Exception(f"No matching entry found for {request.url}")
 
     def _print_diff(self, name: str, expected: str, actual: str, indent_level: int):
         indent = ' ' * indent_level
@@ -147,8 +145,12 @@ class HarCache(HTTPAdapter):
             return success
         return False
 
-    def _do_keys_match(self, request_headers: CaseInsensitiveDict, cached_headers: CaseInsensitiveDict,
-                       indent_level: int) -> bool:
+    def _do_keys_match(
+            self,
+            request_headers: CaseInsensitiveDict,
+            cached_headers: CaseInsensitiveDict,
+            indent_level: int
+    ) -> bool:
         if list(map(str.lower, dict(request_headers).keys())) != list(map(str.lower, dict(cached_headers).keys())):
             self._print_diff(
                 'data',
@@ -159,8 +161,13 @@ class HarCache(HTTPAdapter):
             return False
         return True
 
-    def _are_dicts_same(self, request_dict: MutableMapping, cached_dict: MutableMapping, indent_level: int,
-                        name: str) -> bool:
+    def _are_dicts_same(
+            self,
+            request_dict: MutableMapping,
+            cached_dict: MutableMapping,
+            indent_level: int,
+            name: str
+    ) -> bool:
         indent = ' ' * indent_level
         missing_keys = []
         mismatching_keys = []
@@ -237,17 +244,3 @@ class HarCache(HTTPAdapter):
         response.connection = self
 
         return response
-
-    def __str__(self):
-        version = self.creator_version
-        if version != '':
-            return f"HAR file, {self.creator} {version}, {len(self.entries)} Requests"
-        return f"HAR file, {self.creator}, {len(self.entries)} Requests"
-
-
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-
-
-def load_har(file: str) -> dict:
-    with open(file, 'r') as fp:
-        return json.load(fp)

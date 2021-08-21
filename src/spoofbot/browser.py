@@ -18,7 +18,7 @@ from requests.structures import CaseInsensitiveDict
 from requests.utils import requote_uri, rewind_body, get_netrc_auth
 from urllib3.util.url import parse_url, Url
 
-from spoofbot.adapter import FileCache, HarCache
+from spoofbot.adapter import FileCache
 from spoofbot.operating_system import Windows
 from spoofbot.tag import MimeTypeTag, LanguageTag
 from spoofbot.util import ReferrerPolicy, are_same_origin, are_same_site, sort_dict, TimelessRequestsCookieJar
@@ -125,17 +125,27 @@ class Browser(Session):
         self._header_precedence = []
         self._referrer_policy = ReferrerPolicy.NO_REFERRER_WHEN_DOWNGRADE
         # noinspection PyTypeChecker
-        self._adapter = None
+        self._adapter = self.get_adapter('https://')
 
     @property
     def adapter(self) -> BaseAdapter:
+        """Gets the adapter for the HTTP/HTTPS requests
+
+        :return: The mounted adapter
+        :rtype: BaseAdapter
+        """
         return self._adapter
 
     @adapter.setter
-    def adapter(self, value: BaseAdapter):
-        self._adapter = value
-        self.mount('https://', value)
-        self.mount('http://', value)
+    def adapter(self, adapter: BaseAdapter):
+        """Sets the adapter for the HTTP/HTTPS requests
+
+        :param adapter: The adapter to be mounted
+        :type adapter: BaseAdapter
+        """
+        self._adapter = adapter
+        self.mount('https://', adapter)
+        self.mount('http://', adapter)
 
     @property
     def user_agent(self) -> str:
@@ -363,7 +373,7 @@ class Browser(Session):
         return site.value
 
     def navigate(self, url: str, **kwargs) -> Response:
-        """Sends a GET request to the url and sets will set it into the Referer header in subsequent requests
+        """Sends a GET request to the url and sets it into the Referer header in subsequent requests
 
         :param url: The url the browser is supposed to connect to
         :param kwargs: Additional arguments to forward to the requests module
@@ -450,7 +460,7 @@ class Browser(Session):
         )
 
         # Await the request timeout
-        self.await_timeout(parse_url(prep.url), prep.headers)
+        self.await_timeout(parse_url(prep.url))
 
         # Send the request.
         send_kwargs = {
@@ -458,9 +468,12 @@ class Browser(Session):
             'allow_redirects': allow_redirects,
         }
         send_kwargs.update(settings)
+        req_timestamp = datetime.now()
         response = self.send(prep, **send_kwargs)
 
-        self._last_request_timestamp = datetime.now()
+        adapter = self.adapter
+        if isinstance(adapter, FileCache) and not adapter.hit:
+            self._last_request_timestamp = req_timestamp
         self._last_response = response
         self._report_response(response)
         return response
@@ -762,7 +775,7 @@ class Browser(Session):
             'TE': self._get_te(url),
         })
 
-    def await_timeout(self, url: Url = None, headers: CaseInsensitiveDict = None):
+    def await_timeout(self, url: Url = None):
         """Waits until the request timeout expires.
 
         The delay will be omitted if the last request was a hit in the cache.
@@ -770,25 +783,18 @@ class Browser(Session):
         """
         if not self._honor_timeout:
             return
-        self._waiting_period = timedelta(seconds=0.0)
-        self._did_wait = False
-        adapter = self.get_adapter('https://')
-        if isinstance(adapter, HarCache) or isinstance(adapter, FileCache) and adapter.hit:
-            logger.debug("Last request was a hit in cache. No need to wait.")
-            return
-        if headers is None:
-            headers = {}
-        headers.setdefault('Accept', 'text/html')
-        if url is not None and isinstance(adapter, FileCache) and adapter.is_hit(url, headers):
-            logger.debug("Request will be a hit in cache. No need to wait.")
-            return
-        now = datetime.now()
-        wait_until = self._last_request_timestamp + self._request_timeout
-        if now < wait_until:
-            self._waiting_period = wait_until - now
+        time_passed = datetime.now() - self._last_request_timestamp
+        if time_passed < self._request_timeout:
+            adapter = self.adapter
+            if url is not None and isinstance(adapter, FileCache) and adapter.is_hit(url):
+                logger.debug("Request will be a hit in cache. No need to wait.")
+                return
+            time_to_wait = self._request_timeout - time_passed
+            logger.debug(f"Waiting for {time_to_wait.total_seconds()} seconds.")
+            sleep(time_to_wait.total_seconds())
             self._did_wait = True
-            logger.debug(f"Waiting for {self._waiting_period.total_seconds()} seconds.")
-            sleep(self._waiting_period.total_seconds())
+            return
+        self._did_wait = False
 
     def _adapt_redirection(self, request: PreparedRequest):
         pass

@@ -4,10 +4,12 @@ Supports Firefox and Chrome browser on most generic Windows, MacOS and Linux spo
 
 ## Example usage
 ```py
+from spoofbot.browser import Chrome
+from spoofbot.adapter import FileCache
+
 browser = Chrome()
-cache = CacheAdapter()
-browser.mount('https://', cache)
-browser.mount('http://', cache)
+cache = FileCache()
+browser.adapter = cache
 
 browser.navigate('https://httpbin.org/')
 spec = browser.get('https://httpbin.org/spec.json').json()
@@ -30,14 +32,21 @@ Firefox indicates that brotli encoding (`br`) is acceptable, but that might lead
 It is possible to change that default header:
 
 ```py
+from spoofbot.browser import Firefox
+
 ff = Firefox()
 ff._accept_encoding = ['deflate', 'gzip']  # brotli (br) is cumbersome
 ``` 
 
-The browsers have an automatic request delay built in which can be controlled with the `request_timeout` and `honor_timeout`.
-After requests have been made, `did_wait` and `waiting_period` provide further information.
+The browsers have an automatic request delay built in which can be controlled with the `request_timeout`
+and `honor_timeout`. After requests have been made, `did_wait` and `waiting_period` provide further information.
 
-## File Cache
+## Cache adapters
+
+For more info refer to [the adapter package](src/spoofbot/adapter).
+
+### File Cache
+
 Using `FileCache`, one can store responses (without metadata such as headers or cookies) in the filesystem. It supports
 deleting the last request or a specific file from the cache. The cache indicates whether the last made request got a
 cache hit. If there is a request that should be cached that cannot be adequately stored with only hostname and path, one
@@ -47,7 +56,7 @@ the `backup_and_miss_next_request` property to `True`, the cache will backup the
 it with a new result. If it is later determined that the backup should be restored, the `restore_backup()` method can be
 used.
 
- ## Har Cache
+### Har Cache
 
 Using `HarCache`, one is able to load `.har` files to use as cache. This cache does not make actual http requests to the
 net, but fails if no matching request could be found. It can be specified whether matching a request should be strict (
@@ -56,12 +65,16 @@ provides `clean_har` and `clean_all_in` methods. When matching for requests, one
 matching headers, header order or post data) when looking for a match using the adapter's properties.
 
 ## Example usage
-Please take a look at the [tests](./tests).
-Take note that the loggers provide helpful data when testing fro matches in the cache on the `DEBUG` level.
+
+Please take a look at the [tests](tests). Take note that the loggers provide helpful data when testing from matches in
+the cache on the `DEBUG` level.
 
 ### Tips
 Turn off logging of other libraries:
+
 ```py
+import logging
+
 logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 logging.getLogger('chardet.charsetprober').setLevel(logging.INFO)
 logging.getLogger('chardet.universaldetector').setLevel(logging.INFO)
