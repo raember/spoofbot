@@ -13,7 +13,7 @@ from urllib3.util import Url, parse_url
 from spoofbot.util import cookie_header_to_dict, TimelessRequestsCookieJar
 
 
-class RecordingCache(HTTPAdapter):
+class ArchiveCache(HTTPAdapter):
     """An adapter to be registered in a Session."""
     _entries: dict[Url, list[tuple[PreparedRequest, Response]]]
     _match_header_order: bool
@@ -49,7 +49,7 @@ class RecordingCache(HTTPAdapter):
         :param kwargs:
         :type kwargs:
         """
-        super(RecordingCache, self).__init__(**kwargs)
+        super(ArchiveCache, self).__init__(**kwargs)
         self._entries = entries
         self._match_header_order = match_header_order
         self._match_headers = match_headers
@@ -213,9 +213,9 @@ class RecordingCache(HTTPAdapter):
         """
         response = Response()
 
-        cookie_jar = self.session.cookies.__new__(self.session.cookies.__class__)
-        cookie_jar.__init__()
-        if isinstance(cookie_jar, TimelessRequestsCookieJar):
+        cookie_jar = self.session.cookies
+        if isinstance(cookie_jar, TimelessRequestsCookieJar) \
+                and isinstance(self.session.cookies, TimelessRequestsCookieJar):
             cookie_jar.mock_date = self.session.cookies.mock_date
 
         response.cookies = cookie_jar

@@ -12,9 +12,8 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 from requests import Response
 
-from config import resolve_path
 from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux
-from spoofbot.adapter import RecordingCache
+from spoofbot.adapter import ArchiveCache
 from spoofbot.util import encode_form_data, TimelessRequestsCookieJar, load_har
 
 logging.basicConfig(level=logging.DEBUG)
@@ -29,6 +28,8 @@ p = Path(__file__).parent.parent
 
 
 class WuxiaWorldTest(unittest.TestCase):
+    browser: Firefox = None
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Firefox(ff_version=(71, 0))
@@ -39,7 +40,10 @@ class WuxiaWorldTest(unittest.TestCase):
             MimeTypeTag("application", "xml", q=0.9),
             MimeTypeTag("*", "*", q=0.8)
         ]
-        cls.browser.adapter = RecordingCache(load_har(p / 'test_data/www.wuxiaworld.com_Archive_ALL.har'))
+        cls.browser.adapter = ArchiveCache(
+            load_har(p / 'test_data/www.wuxiaworld.com_Archive_ALL.har'),
+            session=cls.browser  # Important to transfer the TimelessRequestsCookieJar instance!
+        )
 
     def test_01_main_site(self):
         self.browser.transfer_encoding = 'Trailers'
@@ -50,7 +54,7 @@ class WuxiaWorldTest(unittest.TestCase):
         resp = self.browser.navigate('https://www.wuxiaworld.com/account/login')
         self.assertEqual(200, resp.status_code)
 
-        with open(resolve_path('../test_data/ww_auth.json'), 'r') as fp:
+        with open(p / 'test_data/ww_auth.json', 'r') as fp:
             auth = json.load(fp)
         doc = BeautifulSoup(resp.text, features="html.parser")
         # noinspection PyTypeChecker
@@ -152,10 +156,14 @@ class WuxiaWorldTest(unittest.TestCase):
 
 
 class ChromeTest(unittest.TestCase):
+    browser: Chrome = None
+    duckduckgo_navigate: Response = None
+    httpbin_navigate: Response = None
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Chrome(chrome_version=(79, 0, 3945, 130))
-        cls.browser.adapter = RecordingCache(load_har(p / 'test_data/chrome_full.har'))
+        cls.browser.adapter = ArchiveCache(load_har(p / 'test_data/chrome_full.har'))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()
@@ -545,10 +553,14 @@ class ChromeTest(unittest.TestCase):
 
 
 class FirefoxTest(unittest.TestCase):
+    browser: Firefox = None
+    duckduckgo_navigate: Response = None
+    httpbin_navigate: Response = None
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Firefox(ff_version=(72, 0))
-        cls.browser.adapter = RecordingCache(load_har(p / 'test_data/ff_full.har'))
+        cls.browser.adapter = ArchiveCache(load_har(p / 'test_data/ff_full.har'))
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()

@@ -6,7 +6,8 @@ be loaded and returned on subsequent requests.
 
 ## Modes of operation
 
-The FileCache supports `active`, `passive` and `offline` mode.
+The FileCache supports `active`, `passive` and `offline` mode. These modes are not all mutually exclusive and can be
+combined.
 
 ### Active mode (default: enabled)
 
@@ -26,18 +27,18 @@ whether the cache request would have been a hit or a miss.
 
 ---
 
-# HarCache
+# ArchiveCache
 
-The HarCache provides a `requests.Session`-compatible adapter that loads requests and their corresponding responses
-from `.har` files. This allows for a relatively precise request modelling, as all the request parameters are stored.
-Incoming requests will be compared to the loaded ones to find the right match. The HarCache main use-case is for making
-unittests. Hit requests will get deleted from memory alongside their response unless configured
-otherwise (`delete_after_matching`).
+The ArchiveCache provides a `requests.Session`-compatible adapter that caches requests and their corresponding responses
+loaded from `.har` (`load_har`) and [MITMProxy](https://mitmproxy.org/) flow files (`load_flows`). This allows for a
+relatively precise request modelling, as all the request parameters are stored. Incoming requests will be compared to
+the loaded ones to find the right match. The ArchiveCache main use-case is for making unittests. Hit requests will get
+deleted from memory alongside their response unless configured otherwise (`delete_after_matching`).
 
 ## Matching controls
 
-The HarCache allows controlling how precise the requests must match the stored requests, which can come in handy when
-some conditions cannot be recreated consistently.
+The ArchiveCache allows controlling how precise the requests must match the stored requests, which can come in handy
+when some conditions cannot be recreated consistently.
 
 ### Match header order (default: enabled)
 

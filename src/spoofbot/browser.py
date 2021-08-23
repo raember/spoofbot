@@ -8,7 +8,7 @@ from urllib.parse import urlparse, urljoin
 
 from loguru import logger
 from requests import Response, Session, Request, PreparedRequest, codes
-# noinspection PyProtectedMember
+# noinspection PyUnresolvedReferences,PyProtectedMember
 from requests._internal_utils import to_native_string
 from requests.adapters import BaseAdapter
 from requests.cookies import extract_cookies_to_jar, merge_cookies, cookiejar_from_dict
@@ -432,7 +432,7 @@ class Browser(Session):
         :rtype: requests.Response
         """
         self._report_request(method, url)
-
+        cookies = cookies if cookies is not None else self.cookies
         self.headers = self._get_default_headers(method, parse_url(url), user_activation)
         self.headers.update(headers if headers else {})
 
@@ -497,7 +497,7 @@ class Browser(Session):
         # Merge with session cookies
         cookie_jar = self.cookies.__new__(self.cookies.__class__)
         cookie_jar.__init__()
-        if isinstance(cookie_jar, TimelessRequestsCookieJar):
+        if isinstance(cookie_jar, TimelessRequestsCookieJar) and isinstance(self.cookies, TimelessRequestsCookieJar):
             cookie_jar.mock_date = self.cookies.mock_date
         merged_cookies = merge_cookies(
             merge_cookies(cookie_jar, self.cookies), cookies)
@@ -523,6 +523,7 @@ class Browser(Session):
         p.headers = CaseInsensitiveDict(sort_dict(dict(p.headers), self._header_precedence))
         return p
 
+    # noinspection PyUnresolvedReferences
     def resolve_redirects(self, resp, req, stream=False, timeout=None,
                           verify=True, cert=None, proxies=None, yield_requests=False, **adapter_kwargs):
         """Receives a Response. Returns a generator of Responses or Requests."""

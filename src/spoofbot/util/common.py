@@ -1,7 +1,9 @@
 """Common and random utilities that can be useful"""
 import time
 from datetime import datetime
-from http.cookiejar import split_header_words, _warn_unhandled_exception, parse_ns_headers, _debug, CookieJar
+# noinspection PyUnresolvedReferences,PyProtectedMember
+from http.cookiejar import split_header_words, _warn_unhandled_exception, parse_ns_headers, _debug, CookieJar, \
+    CookiePolicy
 from typing import List, Tuple, Dict
 from urllib.parse import quote_plus
 
@@ -72,11 +74,16 @@ def cookie_header_to_dict(cookie: str, sep: str = '; ', eq: str = '=') -> Dict[s
     return d
 
 
-# noinspection SpellCheckingInspection
+# noinspection SpellCheckingInspection,PyUnresolvedReferences
 class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
+    _mock_date: datetime = None
+    _now: float = 0.0
+    _timedelta: float = 0.0
+    _policy: CookiePolicy
+
     def __init__(self, mock_date: datetime = datetime.now()):
         super(TimelessRequestsCookieJar, self).__init__()
-        self.mock_date: datetime = mock_date
+        self.mock_date = mock_date
 
     @property
     def mock_date(self) -> datetime:
@@ -95,39 +102,6 @@ class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
         new_cj.set_policy(self.get_policy())
         new_cj.update(self)
         return new_cj
-
-    def add_cookie_header(self, request):
-        """Add correct Cookie: header to request (urllib.request.Request object).
-
-        The Cookie2 header is also added unless policy.hide_cookie2 is true.
-
-        """
-        _debug("add_cookie_header")
-        self._cookies_lock.acquire()
-        try:
-
-            self._policy._now = self._now = int(time.time() - self._timedelta)
-
-            cookies = self._cookies_for_request(request)
-
-            attrs = self._cookie_attrs(cookies)
-            if attrs:
-                if not request.has_header("Cookie"):
-                    request.add_unredirected_header(
-                        "Cookie", "; ".join(attrs))
-
-            # if necessary, advertise that we know RFC 2965
-            if (self._policy.rfc2965 and not self._policy.hide_cookie2 and
-                    not request.has_header("Cookie2")):
-                for cookie in cookies:
-                    if cookie.version != 1:
-                        request.add_unredirected_header("Cookie2", '$Version="1"')
-                        break
-
-        finally:
-            self._cookies_lock.release()
-
-        self.clear_expired_cookies()
 
     def make_cookies(self, response, request):
         """Return sequence of Cookie objects extracted from response object."""
@@ -197,3 +171,36 @@ class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
                 self.set_cookie(cookie)
         finally:
             self._cookies_lock.release()
+
+    def add_cookie_header(self, request):
+        """Add correct Cookie: header to request (urllib.request.Request object).
+
+        The Cookie2 header is also added unless policy.hide_cookie2 is true.
+
+        """
+        _debug("add_cookie_header")
+        self._cookies_lock.acquire()
+        try:
+
+            self._policy._now = self._now = int(time.time() - self._timedelta)
+
+            cookies = self._cookies_for_request(request)
+
+            attrs = self._cookie_attrs(cookies)
+            if attrs:
+                if not request.has_header("Cookie"):
+                    request.add_unredirected_header(
+                        "Cookie", "; ".join(attrs))
+
+            # if necessary, advertise that we know RFC 2965
+            if (self._policy.rfc2965 and not self._policy.hide_cookie2 and
+                    not request.has_header("Cookie2")):
+                for cookie in cookies:
+                    if cookie.version != 1:
+                        request.add_unredirected_header("Cookie2", '$Version="1"')
+                        break
+
+        finally:
+            self._cookies_lock.release()
+
+        self.clear_expired_cookies()

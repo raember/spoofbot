@@ -2,7 +2,7 @@
 import json
 import os
 from io import BytesIO
-from typing import Union
+from typing import Union, Optional
 
 from mitmproxy.http import HTTPFlow
 from mitmproxy.io import read_flows_from_paths
@@ -49,7 +49,7 @@ def request_from_har_entry(entry: dict) -> Request:
     )
 
 
-def response_from_har_entry(entry: dict) -> HTTPResponse:
+def response_from_har_entry(entry: dict) -> Optional[HTTPResponse]:
     resp = entry['response']
     if resp is None:
         return None
@@ -98,7 +98,7 @@ def request_from_flow(flow: HTTPFlow) -> Request:
     )
 
 
-def response_from_flow(flow: HTTPFlow) -> HTTPResponse:
+def response_from_flow(flow: HTTPFlow) -> Optional[HTTPResponse]:
     resp = flow.response
     if resp is None:
         return None

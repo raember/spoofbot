@@ -1,10 +1,10 @@
 import logging
 import unittest
+from pathlib import Path
 
 from requests import Session
 from urllib3.util import parse_url
 
-from config import resolve_path
 from spoofbot.adapter import FileCache
 
 logging.basicConfig(level=logging.DEBUG)
@@ -17,12 +17,16 @@ HTTPBIN_ANYTHING = parse_url('https://httpbin.org/anything')
 HTTPBIN_ANYTHING2 = parse_url('https://httpbin.org/anything2')
 HTTPBIN_HEADERS = parse_url('https://httpbin.org/headers')
 
+p = Path(__file__).parent.parent.parent
+
 
 class CacheAdapterTest(unittest.TestCase):
+    cache_adapter: FileCache = None
+    session: Session = None
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.cache_adapter = FileCache(resolve_path('../../tests/adapter/.cache'))
+        cls.cache_adapter = FileCache(p / 'tests/adapter/.cache')
         cls.session = Session()
         cls.session.mount('http://', cls.cache_adapter)
         cls.session.mount('https://', cls.cache_adapter)
