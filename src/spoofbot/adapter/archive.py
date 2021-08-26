@@ -1,7 +1,5 @@
 """Provides functionality to inject HAR files as basis for a session to run on"""
 
-from typing import MutableMapping
-
 from loguru import logger
 from requests import PreparedRequest, Session, Response
 from requests.adapters import HTTPAdapter
@@ -11,6 +9,7 @@ from requests.utils import get_encoding_from_headers
 from urllib3.util import Url, parse_url
 
 from spoofbot.util import cookie_header_to_dict, TimelessRequestsCookieJar
+from spoofbot.util.archive import do_keys_match, are_dicts_same, print_diff
 
 
 class ArchiveCache(HTTPAdapter):
@@ -116,90 +115,27 @@ class ArchiveCache(HTTPAdapter):
                 return self.build_response(request, cached_response)
         raise Exception(f"No matching entry found for {request.url}")
 
-    def _print_diff(self, name: str, expected: str, actual: str, indent_level: int):
-        indent = ' ' * indent_level
-        logger.debug(f"{indent}Request {name} does not match:")
-        logger.debug(f"{indent}  {actual}")
-        logger.debug(f"{indent}  does not equal expected:")
-        logger.debug(f"{indent}  {expected}")
-
     def _match_requests(self, request: PreparedRequest, cached_request: PreparedRequest) -> bool:
         indent_level = len(request.method)
         indent = ' ' * indent_level
         if cached_request.method == request.method and cached_request.url == request.url:
             success = True
             if self._match_header_order:
-                success &= self._do_keys_match(request.headers, cached_request.headers, indent_level)
+                success &= do_keys_match(request.headers, cached_request.headers, indent_level)
             if self._match_headers:
-                success &= self._are_dicts_same(request.headers, cached_request.headers, indent_level, 'headers')
+                success &= are_dicts_same(request.headers, cached_request.headers, indent_level, 'headers')
                 if 'Cookie' in cached_request.headers or 'Cookie' in request.headers:
                     request_cookies = cookie_header_to_dict(request.headers.get('Cookie', ''))
                     cached_cookies = cookie_header_to_dict(cached_request.headers.get('Cookie', ''))
-                    success &= self._are_dicts_same(request_cookies, cached_cookies, indent_level + 2, 'cookies')
+                    success &= are_dicts_same(request_cookies, cached_cookies, indent_level + 2, 'cookies')
             if self._match_data and cached_request.body:
                 if cached_request.body != request.body:
                     success = False
-                    self._print_diff('data', cached_request.body, request.body, indent_level)
+                    print_diff('data', cached_request.body, request.body, indent_level)
             if not success:
                 logger.debug(indent + '=' * 16)  # To easily distinguish multiple tested requests
             return success
         return False
-
-    def _do_keys_match(
-            self,
-            request_headers: CaseInsensitiveDict,
-            cached_headers: CaseInsensitiveDict,
-            indent_level: int
-    ) -> bool:
-        if list(map(str.lower, dict(request_headers).keys())) != list(map(str.lower, dict(cached_headers).keys())):
-            self._print_diff(
-                'data',
-                f"({len(cached_headers)}) {', '.join(list(dict(cached_headers).keys()))}",
-                f"({len(request_headers)}) {', '.join(list(dict(request_headers).keys()))}",
-                indent_level
-            )
-            return False
-        return True
-
-    def _are_dicts_same(
-            self,
-            request_dict: MutableMapping,
-            cached_dict: MutableMapping,
-            indent_level: int,
-            name: str
-    ) -> bool:
-        indent = ' ' * indent_level
-        missing_keys = []
-        mismatching_keys = []
-        redundant_keys = []
-        verdict = True
-        for key in cached_dict.keys():
-            if key not in request_dict:
-                missing_keys.append(key)
-            else:
-                if request_dict[key] != cached_dict[key] and key.lower() != 'cookie':
-                    mismatching_keys.append(key)
-        for key in request_dict.keys():
-            if key not in cached_dict:
-                redundant_keys.append(key)
-        if len(missing_keys) > 0:
-            logger.debug(f"{indent}Request {name} are missing the following entries:")
-            for key in missing_keys:
-                logger.debug(f"{indent}  - '{key}': '{cached_dict[key]}'")
-            verdict = False
-        if len(redundant_keys) > 0:
-            logger.debug(f"{indent}Request {name} have the following redundant entries:")
-            for key in redundant_keys:
-                logger.debug(f"{indent}  + '{key}': '{request_dict[key]}'")
-            verdict = False
-        if len(mismatching_keys) > 0:
-            logger.debug(f"{indent}Request {name} have the following mismatching entries:")
-            for key in mismatching_keys:
-                logger.debug(f"{indent}  · '{key}': '{request_dict[key]}'")
-                logger.debug(f"{indent}    {' ' * (len(key) + 2)}  does not equal expected {name[:-1]}:")
-                logger.debug(f"{indent}    {' ' * (len(key) + 2)}  '{cached_dict[key]}'")
-            verdict = False
-        return verdict
 
     def build_response(self, req, resp):
         """Builds a :class:`Response <requests.Response>` object from a urllib3

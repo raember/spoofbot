@@ -214,8 +214,6 @@ class FileCache(HTTPAdapter):
              ) -> Response:
         # Set indentation for aligned log messages
         self._indent = ' ' * len(request.method)
-
-        self._last_request = request
         filepath = to_filepath(request.url, self._cache_path, self._ignore_queries)
         if self._is_active:  # Check for a cached answer
             if filepath.exists():
@@ -324,13 +322,6 @@ class FileCache(HTTPAdapter):
             logger.debug("Deleted response.")
         else:
             logger.debug("No response to delete.")
-
-    def delete_last(self):
-        """
-        Delete the last request.
-        """
-        if self._last_request:
-            self.delete(parse_url(self._last_request.url))
 
     def backup(self) -> 'Backup':
         self._backup = Backup(self)

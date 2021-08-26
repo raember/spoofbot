@@ -6,6 +6,7 @@ from requests import Session
 from urllib3.util import parse_url
 
 from spoofbot.adapter import FileCache
+from spoofbot.util import to_filepath
 
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
@@ -108,9 +109,9 @@ class CacheAdapterTest(unittest.TestCase):
         self.cache_adapter.is_active = True
         self.cache_adapter.is_passive = True
         self.cache_adapter.is_offline = False
-        self.session.get(HTTPBIN_HEADERS, headers={'Accept': 'text/json'})
+        resp = self.session.get(HTTPBIN_HEADERS, headers={'Accept': 'text/json'})
         # If we delete the last response cached, a new request to that url will be a miss
-        self.cache_adapter.delete_last()
+        to_filepath(HTTPBIN_HEADERS, self.cache_adapter.cache_path, self.cache_adapter.ignore_queries).unlink()
         self.session.get(HTTPBIN_HEADERS, headers={'Accept': 'text/json'})
         self.assertFalse(self.cache_adapter.hit)
 
@@ -118,8 +119,8 @@ class CacheAdapterTest(unittest.TestCase):
         self.cache_adapter.is_active = True
         self.cache_adapter.is_passive = True
         self.cache_adapter.is_offline = False
-        self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
+        resp = self.session.get(HTTPBIN_ANYTHING, headers={'Accept': 'text/json'})
         # If we check for a cached response that we requested earlier, it will show as a hit, unless deleted
         self.assertTrue(self.cache_adapter.is_hit(HTTPBIN_ANYTHING))
-        self.cache_adapter.delete_last()
+        to_filepath(HTTPBIN_ANYTHING, self.cache_adapter.cache_path, self.cache_adapter.ignore_queries).unlink()
         self.assertFalse(self.cache_adapter.is_hit(HTTPBIN_ANYTHING))

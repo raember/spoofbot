@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Union
 from urllib.parse import quote_plus, unquote_plus, parse_qsl
 
-from loguru import logger
-from requests import PreparedRequest
 from urllib3 import HTTPResponse
 from urllib3.util import Url, parse_url
 
@@ -177,21 +175,3 @@ def get_symlink_path(from_path: Path, to_path: Path, root: Path) -> Path:
             if to_part is not None:
                 downs.append(to_part)
     return Path(*ups, *downs)
-
-
-def update_cache_to_1_0_3(path: str = CACHE_FILE_SUFFIX):
-    cache = Path(path)
-    for host in cache.glob('*'):
-        logger.info(f"Updating all cached responses of {host}")
-        for cached_resp in host.glob('**/*.*'):
-            if not cached_resp.is_file():
-                continue
-            if cached_resp.suffix == '':
-                new_cached_resp = cached_resp.with_name(CACHE_FILE_SUFFIX)
-            else:
-                new_cached_resp = cached_resp.with_suffix(CACHE_FILE_SUFFIX)
-            cached_resp.rename(new_cached_resp)
-
-
-def update_cached_response_to_1_0_3(req: PreparedRequest):
-    pass
