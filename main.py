@@ -1,11 +1,11 @@
-from spoofbot.adapter.mitmproxy import MITMProxyCache, load_mitmproxy_flows
-
 from spoofbot import Firefox, Windows
+from spoofbot.adapter import ArchiveCache
+from spoofbot.util import load_flows
 
 
 def main():
     browser = Firefox(ff_version=(91, 0), os=Windows(x64=False))
-    mitm_cache = MITMProxyCache(load_mitmproxy_flows('/home/re/mitm'))
+    mitm_cache = ArchiveCache(load_flows('mitm.flows'))
     browser.adapter = mitm_cache
     browser.do_not_track = True
     browser.navigate('http://mitm.it/', headers={
