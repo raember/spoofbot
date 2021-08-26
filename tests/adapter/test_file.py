@@ -59,6 +59,28 @@ class CacheAdapterTest(unittest.TestCase):
 
         # If we have a response cached already, but bypass the cache to request data from the remote,
         # we expect the cache to create a backup of the original cached response.
+        backup = self.cache_adapter.backup()
+        self.assertEqual(backup, self.cache_adapter.backup_data)
+        self.assertEqual(0, len(backup.requests))
+        self.assertIsNotNone(self.session.get(DUCKDUCKGO_NO_REDIRECT))
+        self.assertFalse(self.cache_adapter.hit)
+        self.assertEqual(1, len(backup.requests))
+        self.assertIsNotNone(self.session.get(DUCKDUCKGO_NO_REDIRECT))
+        self.assertFalse(self.cache_adapter.hit)
+        self.assertEqual(2, len(backup.requests))
+        self.assertEqual(DUCKDUCKGO_NO_REDIRECT.url, backup.requests[0][0].url)
+        self.assertTrue(backup.requests[1][1].startswith(b'<!DOCTYPE html>'))
+        backup.stop_backup()
+        self.assertIsNone(self.cache_adapter.backup_data)
+
+    def test_request_backup_with(self):
+        self.cache_adapter.is_active = False
+        self.cache_adapter.is_passive = True
+        self.cache_adapter.is_offline = False
+        self.cache_adapter.delete(DUCKDUCKGO_NO_REDIRECT)
+
+        # If we have a response cached already, but bypass the cache to request data from the remote,
+        # we expect the cache to create a backup of the original cached response.
         with self.cache_adapter.backup() as backup:
             self.assertEqual(backup, self.cache_adapter.backup_data)
             self.assertEqual(0, len(backup.requests))
