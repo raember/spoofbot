@@ -712,7 +712,7 @@ class Browser(Session):
         time_passed = datetime.now() - self._last_request_timestamp
         if time_passed < self._request_timeout:
             adapter = self.adapter
-            if url is not None and isinstance(adapter, FileCache) and adapter.is_hit(url):
+            if url is not None and isinstance(adapter, FileCache) and adapter.is_hit(url) and adapter.is_active:
                 logger.debug("Request will be a hit in cache. No need to wait.")
                 return
             time_to_wait = self._request_timeout - time_passed
