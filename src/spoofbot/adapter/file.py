@@ -220,7 +220,7 @@ class FileCache(HTTPAdapter):
                 logger.debug(f"{self._indent}  Cache hit")
                 self._hit = True
                 return self._load_response(request, filepath)
-        logger.debug(f"{self._indent}  Cache miss")
+            logger.debug(f"{self._indent}  Cache miss")
         self._hit = False
 
         # In offline mode, we cannot make new HTTP requests for cache misses
