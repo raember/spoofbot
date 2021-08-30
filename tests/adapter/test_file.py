@@ -124,3 +124,22 @@ class CacheAdapterTest(unittest.TestCase):
         self.assertTrue(self.cache_adapter.is_hit(HTTPBIN_ANYTHING))
         to_filepath(HTTPBIN_ANYTHING, self.cache_adapter.cache_path, self.cache_adapter.ignore_queries).unlink()
         self.assertFalse(self.cache_adapter.is_hit(HTTPBIN_ANYTHING))
+
+    def test_with_mode(self):
+        self.cache_adapter.is_active = True
+        self.cache_adapter.is_passive = True
+        self.cache_adapter.is_offline = False
+        with self.cache_adapter.use_mode(True, False, False):
+            self.assertTrue(self.cache_adapter.is_active)
+            self.assertFalse(self.cache_adapter.is_passive)
+            self.assertFalse(self.cache_adapter.is_offline)
+            with self.cache_adapter.use_mode(True, False, True):
+                self.assertTrue(self.cache_adapter.is_active)
+                self.assertFalse(self.cache_adapter.is_passive)
+                self.assertTrue(self.cache_adapter.is_offline)
+            self.assertTrue(self.cache_adapter.is_active)
+            self.assertFalse(self.cache_adapter.is_passive)
+            self.assertFalse(self.cache_adapter.is_offline)
+        self.assertTrue(self.cache_adapter.is_active)
+        self.assertTrue(self.cache_adapter.is_passive)
+        self.assertFalse(self.cache_adapter.is_offline)

@@ -331,6 +331,9 @@ class FileCache(HTTPAdapter):
         del self._backup
         self._backup = None
 
+    def use_mode(self, active: bool = None, passive: bool = None, offline: bool = None) -> 'Mode':
+        return Mode(self, active=active, passive=passive, offline=offline)
+
 
 class Backup:
     _cache: FileCache
@@ -379,3 +382,30 @@ class Backup:
     def restore_all(self):
         for req, data in reversed(self._requests):  # Reverse to rollback early backups at the end
             self.restore(req, data)
+
+
+class Mode:
+    _cache: FileCache
+    _old_active: bool
+    _old_passive: bool
+    _old_offline: bool
+
+    def __init__(self, cache: FileCache, active: bool = None, passive: bool = None, offline: bool = None):
+        self._cache = cache
+        self._old_active = self._cache.is_active
+        if active is not None:
+            self._cache.is_active = active
+        self._old_passive = self._cache.is_passive
+        if passive is not None:
+            self._cache.is_passive = passive
+        self._old_offline = self._cache.is_offline
+        if offline is not None:
+            self._cache.is_offline = offline
+
+    def __enter__(self):
+        return
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._cache.is_active = self._old_active
+        self._cache.is_passive = self._old_passive
+        self._cache.is_offline = self._old_offline

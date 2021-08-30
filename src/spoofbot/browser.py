@@ -885,34 +885,3 @@ class Chrome(Browser):
             else:
                 request.headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(request.method, url)
         request.headers = CaseInsensitiveDict(sort_dict(dict(request.headers), self._header_precedence))
-
-# def build_chromium_user_agent(
-#         os=Linux(),
-#         chromium_version='79.0.3945.92',
-#         webkit_version='607.1.40') -> str:
-#     return f"Mozilla/5.0 ({os}) " \
-#            f"AppleWebKit/{webkit_version} (KHTML, like Gecko) " \
-#            f"Chromium/{chromium_version} " \
-#            f"Safari/{webkit_version}"
-#
-#
-# def build_safari_user_agent(
-#         os=MacOSX(),
-#         safari_version='12.1.2',
-#         webkit_version='607.1.40') -> str:
-#     return f"Mozilla/5.0 ({os}) " \
-#            f"AppleWebKit/{webkit_version} (KHTML, like Gecko) " \
-#            f"Version/{safari_version} " \
-#            f"Safari/{webkit_version}"
-#
-#
-# def build_opera_user_agent(
-#         os=MacOSXVersion.Catalina,
-#         opera_version='65.0.3467.42',
-#         chrome_version='78.0.3904.87',
-#         webkit_version='537.36') -> str:
-#     return f"Mozilla/5.0 ({os.to_comment()}) " \
-#            f"AppleWebKit/{webkit_version} (KHTML, like Gecko) " \
-#            f"Chrome/{chrome_version} " \
-#            f"Safari/{webkit_version} " \
-#            f"OPR/{opera_version}"

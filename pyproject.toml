@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "spoofbot"
-version = "1.1.1"
+version = "1.1.2"
 description = "A python requests wrapper that forms requests like real browsers and offers caching"
 authors = ["raember <raember@users.noreply.github.com>"]
 license = "MIT"
