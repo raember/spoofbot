@@ -94,7 +94,11 @@ def to_filepath(
 
     # Append query to filepath
     for i, (key, val) in enumerate(parse_qsl(url.query)):
-        if key in ignore_queries:
+        ignore = False
+        for pattern in ignore_queries:
+            if re.match(pattern, key) is not None:
+                ignore = True
+        if ignore:
             continue
         key = quote_plus(key)
         val = quote_plus(val)
