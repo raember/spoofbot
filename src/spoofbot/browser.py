@@ -687,7 +687,7 @@ class Browser(Session):
         :returns: A dictionary form of the default headers.
         :rtype: OrderedHeaders
         """
-        return CaseInsensitiveDict({
+        return CaseInsensitiveDict(dict(filter(lambda kvp: kvp[1] != '', {
             'Host': self._get_host(url),
             'User-Agent': self._get_user_agent(),
             'Accept': self._get_accept(url),
@@ -699,7 +699,7 @@ class Browser(Session):
             'DNT': self._get_dnt(),
             'Upgrade-Insecure-Requests': self._get_upgrade_insecure_requests(),
             'TE': self._get_te(url),
-        })
+        }.items())))
 
     def await_timeout(self, url: Url = None):
         """Waits until the request timeout expires.
