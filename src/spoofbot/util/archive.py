@@ -1,5 +1,4 @@
 """Module to clean and anonymize HAR logs"""
-import json
 import os
 from io import BytesIO
 from typing import Union, Optional, MutableMapping
@@ -16,51 +15,45 @@ from spoofbot.util.common import dict_list_to_dict, dict_list_to_tuple_list
 from spoofbot.util.file import MockHTTPResponse
 
 
-def load_har(path: Union[str, os.PathLike], session: Session = None) \
-        -> dict[Url, list[tuple[PreparedRequest, Response]]]:
-    if session is None:
-        session = Session()
-        session.headers.clear()
-    har: dict
-    with open(path, 'r') as fp:
-        har = json.load(fp)
-    data = {}
-    for entry in har.get('log', {}).get('entries', []):
-        request: PreparedRequest = session.prepare_request(request_from_har_entry(entry))
-        response: HTTPResponse = response_from_har_entry(entry)
-        url = parse_url(request.url)
-        requests = data.get(url, [])
-        requests.append((request, response))
-        data[url] = requests
-    return data
-
-
-def request_from_har_entry(entry: dict) -> Request:
+def request_from_har_entry(entry: dict) -> tuple[Request, str]:
     request_entry = entry['request']
     data = {}
     if 'postData' in request_entry:
         post_data = dict_list_to_tuple_list(request_entry['postData']['params'], case_insensitive=False)
         data = '&'.join(map('='.join, post_data))
+        if len(data) == 0:
+            data = request_entry['postData']['text']
     return Request(
         method=request_entry['method'].upper(),
         url=request_entry['url'],
         headers=CaseInsensitiveDict(dict_list_to_dict(request_entry['headers'], case_insensitive=True)),
         data=data,
-        cookies=dict_list_to_dict(request_entry['cookies']),
-    )
+        cookies=dict_list_to_dict(request_entry['cookies'])
+    ), request_entry['httpVersion'].upper()
 
 
 def response_from_har_entry(entry: dict) -> Optional[HTTPResponse]:
-    resp = entry['response']
-    if resp is None:
+    response_entry = entry['response']
+    if response_entry is None:
         return None
-    headers = dict_list_to_tuple_list(resp['headers'])
+    # resp = Response()
+    # setattr(resp, '_content', response_entry['content'].get('text', '').encode('utf8'))
+    # status = int(response_entry['status'])
+    # resp.status_code = status
+    # resp.headers = CaseInsensitiveDict(dict_list_to_tuple_list(response_entry['headers']))
+    # resp.url = entry['request']['url']
+    # resp.reason = STATUS_COLOR_MESSAGE.get(status, (None, 'UNKNOWN'))[1]
+    # resp.cookies = cookiejar_from_dict(dict_list_to_dict(response_entry['cookies']))
+    # resp.elapsed = timedelta(entry.get('time', 0))
+
+    headers = dict_list_to_tuple_list(response_entry['headers'])
     resp = HTTPResponse(
-        body=BytesIO(resp['content'].get('text', '').encode('utf8')),
-        headers=CaseInsensitiveDict(headers),
-        status=resp['status'],
+        body=BytesIO(response_entry['content'].get('text', '').encode('utf8')),
+        headers=headers,
+        status=response_entry['status'],
         preload_content=False,
-        original_response=MockHTTPResponse(headers)
+        original_response=MockHTTPResponse(headers),
+        version=response_entry.get('version', 'HTTP/1.1')
     )
     resp.CONTENT_DECODERS = []  # Hack to prevent already decoded contents to be decoded again
     return resp

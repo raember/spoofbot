@@ -524,6 +524,9 @@ class ChromeTest(unittest.TestCase):
         })
         self.assertIsNotNone(response)
 
+    # https://ipinfo.io/
+    # aHR0cHM6Ly9pcGluZm8uaW8v
+    # https%3a%2f%2fipinfo.io%2f
     def test_32_forms(self):
         self.browser.adapter.match_header_order = False
         self.browser.adapter.match_headers = True

@@ -6,6 +6,7 @@ from time import sleep
 from typing import List, Optional, AnyStr, TypeVar, TextIO, Tuple, Callable, Dict
 from urllib.parse import urlparse, urljoin
 
+from bs4 import BeautifulSoup
 from loguru import logger
 from requests import Response, Session, Request, PreparedRequest, codes
 # noinspection PyUnresolvedReferences,PyProtectedMember
@@ -106,6 +107,9 @@ class Browser(Session):
 
     def __init__(self):
         super(Browser, self).__init__()
+        self._name = 'Spoofbot'
+        from spoofbot import __version__
+        self._version = __version__
         self._user_agent = ''
         self._accept = []
         self._accept_language = []
@@ -127,6 +131,16 @@ class Browser(Session):
         self._referrer_policy = ReferrerPolicy.NO_REFERRER_WHEN_DOWNGRADE
         # noinspection PyTypeChecker
         self._adapter = self.get_adapter('https://')
+
+    @property
+    def name(self) -> str:
+        """Name of the browser"""
+        return self._name
+
+    @property
+    def version(self) -> str:
+        """Version of the browser"""
+        return self._version
 
     @property
     def adapter(self) -> BaseAdapter:
@@ -373,7 +387,7 @@ class Browser(Session):
         # noinspection PyTypeChecker
         return site.value
 
-    def navigate(self, url: str, **kwargs) -> Response:
+    def navigate(self, url: str, **kwargs) -> list[Response]:
         """Sends a GET request to the url and sets it into the Referer header in subsequent requests
 
         :param url: The url the browser is supposed to connect to
@@ -384,7 +398,57 @@ class Browser(Session):
         kwargs.setdefault('user_activation', True)
         response = self.get(url, **kwargs)
         self._last_navigate = response
-        return response
+        return self._request_attachments(response)
+
+    def _request_attachments(self, response: Response) -> list[Response]:
+        response.raise_for_status()
+        responses = [response]
+        bs = BeautifulSoup(response.content, features='html.parser')
+        url = parse_url(response.url)
+        links = self._gather_valid_links(bs, url) + self._gather_valid_scripts(bs, url)
+        for link in links:
+            logger.debug(f"Fetching {link.url}")
+            try:
+                resp = self.get(link.url)
+                responses.append(resp)
+            except ConnectionError:
+                pass
+        return responses
+
+    def _gather_valid_links(self, bs: BeautifulSoup, origin: Url) -> list[Url]:
+        links = []
+        for link in bs.find_all('link'):
+            ignore = False
+            for rel in link.get('rel', None):
+                # https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/rel
+                if rel in {'dns-prefetch', 'preconnect'}:  # DNS resolve and preemptively connecting is useless to us
+                    ignore |= True
+                elif rel in {'canonical'}:
+                    ignore |= True
+                elif rel in {'manifest', 'mask-icon', 'shortcut'}:  # non-standard and unsupported
+                    ignore |= True
+            if ignore:
+                continue
+            href: str = link.get('href', None)
+            if href is None:
+                continue
+            if href.startswith('/'):
+                href = f"{origin.scheme}://{origin.hostname}{href}"
+            links.append(parse_url(href))
+        return links
+
+    def _gather_valid_scripts(self, bs: BeautifulSoup, origin: Url) -> list[Url]:
+        scripts = []
+        for script in bs.find_all('script'):
+            if 'src' not in script.attrs:
+                continue
+            src: str = script.get('src', None)
+            if src is None:
+                continue
+            if src.startswith('/'):
+                src = f"{origin.scheme}://{origin.hostname}{src}"
+            scripts.append(parse_url(src))
+        return scripts
 
     def request(self, method: AnyStr, url: AnyStr, params: DictOrBytes = None,
                 data: DictOrTupleListOrBytesOrFileLike = None, headers: dict = None, cookies: DictOrCookieJar = None,
@@ -737,6 +801,8 @@ class Firefox(Browser):
                  do_not_track=False,
                  upgrade_insecure_requests=True):
         super(Firefox, self).__init__()
+        self._name = 'Firefox'
+        self._version = '.'.join(map(str, ff_version))
         self._user_agent = self.create_user_agent(os, ff_version, build_id)
         self._accept = [
             MimeTypeTag("text", "html"),
@@ -797,6 +863,8 @@ class Chrome(Browser):
                  do_not_track=False,
                  upgrade_insecure_requests=True):
         super(Chrome, self).__init__()
+        self._name = 'Chrome'
+        self._version = '.'.join(map(str, chrome_version))
         self._user_agent = self.create_user_agent(os=os, version=chrome_version, webkit_version=webkit_version)
         self._accept = [
             MimeTypeTag("text", "html"),

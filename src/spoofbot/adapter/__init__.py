@@ -2,3 +2,4 @@
 
 from .archive import ArchiveCache
 from .file import FileCache, Backup
+from .har import HarAdapter

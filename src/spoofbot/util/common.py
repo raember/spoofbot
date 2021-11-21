@@ -4,10 +4,12 @@ from datetime import datetime
 # noinspection PyUnresolvedReferences,PyProtectedMember
 from http.cookiejar import split_header_words, _warn_unhandled_exception, parse_ns_headers, _debug, CookieJar, \
     CookiePolicy
-from typing import List, Tuple, Dict
-from urllib.parse import quote_plus
+from typing import List, Tuple, Dict, Union
+from urllib.parse import quote_plus, urlparse, unquote
 
 from requests.cookies import RequestsCookieJar
+from requests.structures import CaseInsensitiveDict
+from urllib3.util import Url
 
 
 def coerce_content(content, encoding=None):
@@ -37,6 +39,16 @@ def dict_list_to_dict(other: List[dict], case_insensitive: bool = False) -> dict
             key = header_to_snake_case(key)
         d[key] = kv['value']
     return d
+
+
+def dict_to_dict_list(headers: CaseInsensitiveDict) -> list[dict[str, str]]:
+    data = []
+    for key, value in headers.items():
+        data.append({
+            'name': key,
+            'value': value
+        })
+    return data
 
 
 def dict_list_to_tuple_list(other: List[dict], case_insensitive: bool = False) -> List[Tuple[str, str]]:
@@ -72,6 +84,28 @@ def cookie_header_to_dict(cookie: str, sep: str = '; ', eq: str = '=') -> Dict[s
         else:
             d[tag] = None
     return d
+
+
+def query_to_dict_list(query: str) -> list[dict[str, str]]:
+    queries = []
+    for kvp in query.split('&'):
+        if '=' in kvp:
+            k, v = kvp.split('=', 1)
+        else:
+            k, v = kvp, ''
+        queries.append({
+            'name': k,
+            'value': unquote(v)
+        })
+    return queries
+
+
+def url_to_query_dict_list(url: Union[Url, str]) -> list[dict[str, str]]:
+    if isinstance(url, str):
+        url = urlparse(url)
+    if url.query == '':
+        return []
+    return query_to_dict_list(url.query)
 
 
 # noinspection SpellCheckingInspection,PyUnresolvedReferences
