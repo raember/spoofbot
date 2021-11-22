@@ -76,6 +76,7 @@ class Creator(JsonObject):
 # noinspection DuplicatedCode
 class Browser(JsonObject):
     """Information about the browser that created the log"""
+
     name: str
     version: str
     comment: str  # optional
@@ -114,6 +115,7 @@ class Browser(JsonObject):
 
 class PageTimings(JsonObject):
     """This object describes timings for various events (states) fired during the page load."""
+
     on_content_load: timedelta  # optional
     on_load: timedelta  # optional
     comment: str  # optional
@@ -175,6 +177,7 @@ class PageTimings(JsonObject):
 
 class Page(JsonObject):
     """Exported page"""
+
     started_datetime: datetime
     id: str
     title: str
@@ -441,6 +444,7 @@ class Timings(JsonObject):
 
 class Entry(JsonObject):
     """Represents an array with all exported HTTP requests."""
+
     page_ref: str  # optional
     started_datetime: datetime
     time: timedelta
@@ -623,6 +627,7 @@ class Entry(JsonObject):
 
 class Log(JsonObject):
     """The root of the exported data"""
+
     version: str
     creator: Creator
     browser: Browser  # optional
