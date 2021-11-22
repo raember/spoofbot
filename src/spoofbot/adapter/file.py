@@ -271,7 +271,7 @@ class FileCache(HTTPAdapter):
 
         if filepath.is_file():
             return self.build_response(request, load_response(filepath))
-        elif filepath.is_symlink():
+        if filepath.is_symlink():
             from urllib3 import HTTPResponse
             from io import BytesIO
             return self.build_response(request, HTTPResponse(
@@ -417,7 +417,7 @@ class Mode:
             self._cache.is_offline = offline
 
     def __enter__(self):
-        return
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._cache.is_active = self._old_active

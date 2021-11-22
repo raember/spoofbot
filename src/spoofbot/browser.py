@@ -309,8 +309,8 @@ class Browser(Session):
         if not are_same_origin(nav_url, url) or method not in ['GET', 'HEAD']:
             return self._referrer_policy.get_origin(nav_url, url)
 
-    # noinspection PyMethodMayBeStatic
-    def _get_host(self, url: Url) -> str:
+    @staticmethod
+    def _get_host(url: Url) -> str:
         if url.port:
             return f"{url.hostname}:{url.port}"
         return url.hostname
@@ -352,8 +352,8 @@ class Browser(Session):
         if url.scheme == 'https' and self._te != '':
             return self._te
 
-    # noinspection PyMethodMayBeStatic
-    def _get_sec_fetch_dest(self, dest: Destination) -> str:
+    @staticmethod
+    def _get_sec_fetch_dest(dest: Destination) -> str:
         # https://www.w3.org/TR/fetch-metadata/#sec-fetch-dest-header
         # noinspection SpellCheckingInspection
         if dest is None:

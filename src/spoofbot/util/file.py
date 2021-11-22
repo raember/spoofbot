@@ -31,8 +31,8 @@ class MockHTTPResponse:
         self.msg = p.parsestr(h)
         self.msg.set_payload(h)
 
-    # noinspection PyMethodMayBeStatic
-    def isclosed(self):
+    @staticmethod
+    def isclosed():
         return False
 
 

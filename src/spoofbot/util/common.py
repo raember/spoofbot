@@ -55,8 +55,8 @@ def dict_to_dict_list(headers: CaseInsensitiveDict) -> list[dict[str, str]]:
     return data
 
 
-def dict_list_to_tuple_list(other: List[dict], case_insensitive: bool = False) -> List[
-    Tuple[str, str]]:
+def dict_list_to_tuple_list(other: List[dict], case_insensitive: bool = False) -> \
+        List[Tuple[str, str]]:
     tuples = []
     for kv in other:
         key = kv['name']
@@ -81,8 +81,8 @@ def header_to_snake_case(string: str) -> str:
         map(lambda w: w.capitalize() if not w.isupper() else w, string.split('-')))
 
 
-def cookie_header_to_dict(cookie: str, sep: str = '; ', eq: str = '=') -> Dict[
-    str, str]:
+def cookie_header_to_dict(cookie: str, sep: str = '; ', eq: str = '=') -> \
+        Dict[str, str]:
     d = {}
     for tag in cookie.split(sep):
         if eq in tag:
@@ -191,8 +191,10 @@ class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
                 for cookie in cookies:
                     lookup[(cookie.domain, cookie.path, cookie.name)] = None
 
-                # noinspection PyDefaultArgument,PyShadowingNames
-                def no_matching_rfc2965(ns_cookie, lookup=lookup):
+                # noinspection PyShadowingNames
+                def no_matching_rfc2965(ns_cookie, lookup=None):
+                    if lookup is None:
+                        lookup = lookup
                     key = ns_cookie.domain, ns_cookie.path, ns_cookie.name
                     return key not in lookup
 

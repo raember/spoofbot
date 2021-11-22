@@ -161,7 +161,8 @@ def sort_dict(d: dict, precedence: list) -> Generator[Tuple[Any, Any], Any, None
         try:
             item_precedence = precedence.index(k)
         except ValueError:
-            # no defined sort for this header, so we put it behind any other sorted header
+            # no defined sort for this header,
+            # so we put it behind any other sorted header
             item_precedence = sys.maxsize
         items.append((item_precedence, k, v))
     return ((k, v) for _, k, v in sorted(items))

@@ -85,6 +85,7 @@ class HarAdapter(CacheAdapter):
                 comment="Created with Spoofbot"
             )
 
+        # noinspection PyUnusedLocal
         def resp_hook(response: Response, **kwargs):
             # Only update the time if it was a new entry added to the list
             if not self._expect_new_entry:
