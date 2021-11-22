@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Union, Optional
 
 from loguru import logger
-from requests import PreparedRequest, Response, Session
+from requests import PreparedRequest, Response, Session, RequestException
 from requests.adapters import HTTPAdapter
 from urllib3 import HTTPResponse
 
@@ -37,9 +37,7 @@ class CacheAdapter(HTTPAdapter, ABC):
 
     @property
     def cache_path(self) -> Path:
-        """
-        The root path of the cache.
-        """
+        """The root path of the cache"""
         return self._cache_path
 
     @cache_path.setter
@@ -135,9 +133,7 @@ class CacheAdapter(HTTPAdapter, ABC):
 
     @property
     def hit(self) -> bool:
-        """
-        True if the last processed request was a hit in the cache
-        """
+        """True if the last processed request was a hit in the cache"""
         return self._hit
 
     def prepare_session(self, session: Session):
@@ -168,12 +164,12 @@ class CacheAdapter(HTTPAdapter, ABC):
         # Send HTTP request to remote
         try:
             response = self._send(request, stream, timeout, verify, cert, proxies)
-        except Exception as ex:
+        except RequestException as ex:
             # In case the request fails, we still might want to save it
             logger.error(ex)
             response = self.build_response(request, HTTPResponse(body=''))
-            self._handle_response(response)
-            raise
+            # self._handle_response(response)
+            # raise
         self._handle_response(response)
         return response
 

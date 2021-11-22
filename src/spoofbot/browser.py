@@ -160,6 +160,7 @@ class Browser(Session):
         """
         self._adapter = adapter
         self.mount('https://', adapter)
+        # noinspection HttpUrlsUsage
         self.mount('http://', adapter)
 
     @property
@@ -415,7 +416,8 @@ class Browser(Session):
                 pass
         return responses
 
-    def _gather_valid_links(self, bs: BeautifulSoup, origin: Url) -> list[Url]:
+    @staticmethod
+    def _gather_valid_links(bs: BeautifulSoup, origin: Url) -> list[Url]:
         links = []
         for link in bs.find_all('link'):
             ignore = False
@@ -437,7 +439,8 @@ class Browser(Session):
             links.append(parse_url(href))
         return links
 
-    def _gather_valid_scripts(self, bs: BeautifulSoup, origin: Url) -> list[Url]:
+    @staticmethod
+    def _gather_valid_scripts(bs: BeautifulSoup, origin: Url) -> list[Url]:
         scripts = []
         for script in bs.find_all('script'):
             if 'src' not in script.attrs:

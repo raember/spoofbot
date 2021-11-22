@@ -1,4 +1,5 @@
 """Module to clean and anonymize HAR logs"""
+import base64
 import os
 from io import BytesIO
 from typing import Union, Optional, MutableMapping
@@ -47,8 +48,14 @@ def response_from_har_entry(entry: dict) -> Optional[HTTPResponse]:
     # resp.elapsed = timedelta(entry.get('time', 0))
 
     headers = dict_list_to_tuple_list(response_entry['headers'])
+    content: dict = response_entry['content']
+    encoding = content.get('encoding', None)
+    if encoding == 'base64':
+        body = base64.b64decode(content.get('text', ''))
+    else:
+        body = content.get('text', '').encode('utf8')
     resp = HTTPResponse(
-        body=BytesIO(response_entry['content'].get('text', '').encode('utf8')),
+        body=BytesIO(body),
         headers=headers,
         status=response_entry['status'],
         preload_content=False,

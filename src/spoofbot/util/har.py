@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 from abc import ABC
@@ -23,16 +24,19 @@ from spoofbot.util.archive import request_from_har_entry, response_from_har_entr
 
 class JsonObject(ABC):
     @classmethod
-    def from_dict(cls, data: dict):
+    def from_dict(cls, *args):
+        """Create an instance from a json dict and possible additional args"""
         raise NotImplementedError()
 
     def to_dict(self) -> dict:
+        """Serialize object to a json dict"""
         raise NotImplementedError()
 
 
 # noinspection DuplicatedCode
 class Creator(JsonObject):
     """Information about the log creator application"""
+
     name: str
     version: str
     comment: str  # optional
@@ -476,7 +480,8 @@ class Entry(JsonObject):
 
     @classmethod
     def from_dict(cls, data: dict, adapter: HTTPAdapter = None) -> 'Entry':
-        assert adapter is not None, "Adapter needed to build response"
+        if adapter is None:
+            adapter = HTTPAdapter()
         req, httpver = request_from_har_entry(data)
         preq = req.prepare()
         hresp = response_from_har_entry(data)
@@ -582,8 +587,9 @@ class Entry(JsonObject):
         if response.content is not None:
             try:
                 data['text'] = response.content.decode()
-            except:
-                data['text'] = response.content.decode('latin1')
+            except UnicodeDecodeError:
+                data['text'] = base64.b64encode(response.content).decode()
+                data['encoding'] = 'base64'
         else:
             data['text'] = ''
         return data
@@ -718,10 +724,18 @@ class HarFile:
             self._har = self._defaults()
 
     def load(self, data: dict):
+        """
+        Load HAR from json dict
+
+        :param data: The json dict
+        :type data: dict
+        :return:
+        """
         self._har = Har.from_dict(data, adapter=self._adapter)
 
     @staticmethod
     def _defaults() -> Har:
+        """Construct a default HAR instance"""
         from spoofbot import __version__
         return Har(
             log=Log(
@@ -740,6 +754,13 @@ class HarFile:
         )
 
     def save(self, fp: TextIO = None):
+        """
+        Saves HAR to file
+
+        :param fp: The file.
+        :type fp: TextIO
+        :return:
+        """
         if fp is None:
             fp = self._fp
         fp.seek(0)

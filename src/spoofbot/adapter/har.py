@@ -92,7 +92,8 @@ class HarAdapter(CacheAdapter):
             self._expect_new_entry = False
 
             last_entry = self._har.log.entries[-1]
-            assert last_entry.response == response
+            if last_entry.response != response:
+                raise Exception("Hook got called on the wrong response")
             last_entry.time = response.elapsed
             last_entry.timings.wait = response.elapsed
             return response
@@ -124,10 +125,9 @@ class HarAdapter(CacheAdapter):
                     request_cookies = cookie_header_to_dict(request.headers.get('Cookie', ''))
                     cached_cookies = cookie_header_to_dict(cached_request.headers.get('Cookie', ''))
                     success &= are_dicts_same(request_cookies, cached_cookies, indent_level + 2, 'cookies')
-            if self._match_data and cached_request.body:
-                if cached_request.body != request.body:
-                    success = False
-                    print_diff('data', cached_request.body, request.body, indent_level)
+            if self._match_data and cached_request.body and cached_request.body != request.body:
+                success = False
+                print_diff('data', cached_request.body, request.body, indent_level)
             if not success:
                 logger.debug(indent + '=' * 16)  # To easily distinguish multiple tested requests
             return success
