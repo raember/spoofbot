@@ -8,7 +8,9 @@ from urllib3.util import Url
 
 
 def is_ip(string: str) -> bool:
-    return re.match(r'^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$', string) is not None
+    return re.match(
+        r'^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$',
+        string) is not None
 
 
 def is_domain(string: str) -> bool:
@@ -16,8 +18,10 @@ def is_domain(string: str) -> bool:
 
 
 def opaque_origin(url: Url) -> str:
-    """https://html.spec.whatwg.org/multipage/origin.html#concept-origin-opaque
-    https://html.spec.whatwg.org/multipage/origin.html#ascii-serialisation-of-an-origin"""
+    """
+    https://html.spec.whatwg.org/multipage/origin.html#concept-origin-opaque
+    https://html.spec.whatwg.org/multipage/origin.html#ascii-serialisation-of-an-origin
+    """
     if url.port is None:
         return f"{url.scheme}://{url.hostname}"
     return f"{url.scheme}://{url.hostname}:{url.port}"
@@ -42,7 +46,10 @@ def are_same_origin(a: Url, b: Url) -> bool:
     #     return True
     a_tpl = origin_tuple(a)
     b_tpl = origin_tuple(b)
-    return a_tpl.scheme == b_tpl.scheme and a_tpl.host == b_tpl.host and a_tpl.port == b_tpl.port
+    return \
+        a_tpl.scheme == b_tpl.scheme and \
+        a_tpl.host == b_tpl.host and \
+        a_tpl.port == b_tpl.port
 
 
 def are_same_origin_domain(a: Url, b: Url) -> bool:
@@ -50,7 +57,10 @@ def are_same_origin_domain(a: Url, b: Url) -> bool:
     # if opaque_origin(a) == opaque_origin(b):
     #     return True
     a_tuple, b_tuple = origin_tuple(a), origin_tuple(b)
-    if a_tuple[0] == b_tuple[0] and a_tuple[1] is not None and b_tuple[1] is not None and a_tuple[1] == b_tuple[1]:
+    if a_tuple[0] == b_tuple[0] and \
+            a_tuple[1] is not None and \
+            b_tuple[1] is not None and \
+            a_tuple[1] == b_tuple[1]:
         return True
     return False
 
@@ -71,7 +81,6 @@ def are_schemelessly_same_site(a: Url, b: Url) -> bool:
 
 def are_same_site(a: Url, b: Url) -> bool:
     """https://html.spec.whatwg.org/multipage/origin.html#same-site"""
-    # return are_schemelessly_same_site(a, b) and (opaque_origin(a) == opaque_origin(b) or a.scheme == b.scheme)
     return are_schemelessly_same_site(a, b) and a.scheme == b.scheme
 
 
@@ -80,7 +89,8 @@ def strip_url_for_referrer(url: Url, origin_only: bool = False) -> str:
         return 'no referer'
     if origin_only:
         return Url(url.scheme, host=url.hostname, port=url.port).url
-    return Url(url.scheme, host=url.hostname, port=url.port, path=url.path, query=url.query).url
+    return Url(url.scheme, host=url.hostname, port=url.port, path=url.path,
+               query=url.query).url
 
 
 def is_downgrade(origin: Url, target: Url) -> bool:
@@ -97,7 +107,8 @@ class ReferrerPolicy(Enum):
     STRICT_ORIGIN_WHEN_CROSS_ORIGIN = 6
     UNSAFE_URL = 7
 
-    def get_referrer(self, origin: Url, target: Url, origin_only: bool = False) -> Optional[str]:
+    def get_referrer(self, origin: Url, target: Url, origin_only: bool = False) -> \
+            Optional[str]:
         if self == ReferrerPolicy.NO_REFERRER or origin is None:
             return None
         if self == ReferrerPolicy.NO_REFERRER_WHEN_DOWNGRADE:

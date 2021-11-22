@@ -59,9 +59,9 @@ class MacOSXVersion(Enum):
 
 class MacOSX(OS):
     def __init__(self, version=MacOSXVersion.Catalina):
-        """A representation of Mac OS X as the underlying operating system.
+        """A representation of MacOS X as the underlying operating system.
 
-        :param version: The Mac OS X version (default :py:const:`MacOSXVersion.Catalina`)
+        :param version: The MacOS X version (default :py:const:`MacOSXVersion.Catalina`)
         """
         super(MacOSX, self).__init__()
         self.comments.append("Macintosh")
@@ -77,7 +77,8 @@ class Linux(OS):
     def __init__(self, derivative=LinuxDerivatives.Generic, x64=True, native=True):
         """A representation of GNU Linux as the underlying operating system.
 
-        :param derivative: The Linux derivative (default :py:const:`LinuxDerivatives.Generic`)
+        :param derivative: The Linux derivative
+            (default :py:const:`LinuxDerivatives.Generic`)
         :param x64: Whether the platform is 64-bit or 32-bit (default: :py:obj:`True`)
         :param native: Whether the browser is 64-bit or 32-bit (default: :py:obj:`True`)
         """

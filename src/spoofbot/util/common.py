@@ -2,7 +2,8 @@
 import time
 from datetime import datetime
 # noinspection PyUnresolvedReferences,PyProtectedMember
-from http.cookiejar import split_header_words, _warn_unhandled_exception, parse_ns_headers, _debug, CookieJar, \
+from http.cookiejar import split_header_words, _warn_unhandled_exception, \
+    parse_ns_headers, _debug, CookieJar, \
     CookiePolicy
 from typing import List, Tuple, Dict, Union
 from urllib.parse import quote_plus, urlparse, unquote
@@ -19,7 +20,10 @@ def coerce_content(content, encoding=None):
 
 
 def encode_form_data(data: List[Tuple[str, str]]) -> str:
-    """Encodes data from html forms into an escaped, url-query-like string for post messages"""
+    """
+    Encodes data from html forms into an escaped, url-query-like string for post
+    messages
+    """
     # functional flex
     return '&'.join(map('='.join, map(lambda t: (t[0], quote_plus(t[1])), data)))
 
@@ -51,7 +55,8 @@ def dict_to_dict_list(headers: CaseInsensitiveDict) -> list[dict[str, str]]:
     return data
 
 
-def dict_list_to_tuple_list(other: List[dict], case_insensitive: bool = False) -> List[Tuple[str, str]]:
+def dict_list_to_tuple_list(other: List[dict], case_insensitive: bool = False) -> List[
+    Tuple[str, str]]:
     tuples = []
     for kv in other:
         key = kv['name']
@@ -72,10 +77,12 @@ def dict_to_str(d: dict, sep: str = '; ', eq: str = '=') -> str:
 
 
 def header_to_snake_case(string: str) -> str:
-    return '-'.join(map(lambda w: w.capitalize() if not w.isupper() else w, string.split('-')))
+    return '-'.join(
+        map(lambda w: w.capitalize() if not w.isupper() else w, string.split('-')))
 
 
-def cookie_header_to_dict(cookie: str, sep: str = '; ', eq: str = '=') -> Dict[str, str]:
+def cookie_header_to_dict(cookie: str, sep: str = '; ', eq: str = '=') -> Dict[
+    str, str]:
     d = {}
     for tag in cookie.split(sep):
         if eq in tag:

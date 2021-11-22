@@ -13,7 +13,8 @@ from requests import Response, Session, Request, PreparedRequest, codes
 from requests._internal_utils import to_native_string
 from requests.adapters import BaseAdapter
 from requests.cookies import extract_cookies_to_jar, merge_cookies, cookiejar_from_dict
-from requests.exceptions import ChunkedEncodingError, ContentDecodingError, TooManyRedirects
+from requests.exceptions import ChunkedEncodingError, ContentDecodingError, \
+    TooManyRedirects
 from requests.sessions import merge_setting, merge_hooks
 from requests.structures import CaseInsensitiveDict
 from requests.utils import requote_uri, rewind_body, get_netrc_auth
@@ -22,7 +23,8 @@ from urllib3.util.url import parse_url, Url
 from spoofbot.adapter import FileCache
 from spoofbot.operating_system import Windows
 from spoofbot.tag import MimeTypeTag, LanguageTag
-from spoofbot.util import ReferrerPolicy, are_same_origin, are_same_site, sort_dict, TimelessRequestsCookieJar
+from spoofbot.util import ReferrerPolicy, are_same_origin, are_same_site, sort_dict, \
+    TimelessRequestsCookieJar
 from spoofbot.util.log import log_request, log_response
 
 
@@ -71,7 +73,8 @@ class User(Enum):
 
 
 DictOrBytes = TypeVar('DictOrBytes', dict, bytes)
-DictOrTupleListOrBytesOrFileLike = TypeVar('DictOrTupleListOrBytesOrFileLike', dict, List[tuple], bytes, TextIO)
+DictOrTupleListOrBytesOrFileLike = TypeVar('DictOrTupleListOrBytesOrFileLike', dict,
+                                           List[tuple], bytes, TextIO)
 DictOrCookieJar = TypeVar('DictOrCookieJar', dict, CookieJar)
 StrOrFileLike = TypeVar('StrOrFileLike', str, TextIO)
 AuthTupleOrCallable = TypeVar('AuthTupleOrCallable', Tuple[str, str], Callable)
@@ -389,7 +392,8 @@ class Browser(Session):
         return site.value
 
     def navigate(self, url: str, **kwargs) -> list[Response]:
-        """Sends a GET request to the url and sets it into the Referer header in subsequent requests
+        """Sends a GET request to the url and sets it into the Referer header in
+        subsequent requests
 
         :param url: The url the browser is supposed to connect to
         :param kwargs: Additional arguments to forward to the requests module
@@ -423,11 +427,13 @@ class Browser(Session):
             ignore = False
             for rel in link.get('rel', None):
                 # https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/rel
-                if rel in {'dns-prefetch', 'preconnect'}:  # DNS resolve and preemptively connecting is useless to us
+                if rel in {'dns-prefetch', 'preconnect'}:
+                    # DNS resolve and preemptively connecting is useless to us
                     ignore |= True
                 elif rel in {'canonical'}:
                     ignore |= True
-                elif rel in {'manifest', 'mask-icon', 'shortcut'}:  # non-standard and unsupported
+                elif rel in {'manifest', 'mask-icon', 'shortcut'}:
+                    # non-standard and unsupported
                     ignore |= True
             if ignore:
                 continue
@@ -454,10 +460,14 @@ class Browser(Session):
         return scripts
 
     def request(self, method: AnyStr, url: AnyStr, params: DictOrBytes = None,
-                data: DictOrTupleListOrBytesOrFileLike = None, headers: dict = None, cookies: DictOrCookieJar = None,
-                files: StrOrFileLike = None, auth: AuthTupleOrCallable = None, timeout: FloatOrTuple = None,
-                allow_redirects=True, proxies: Dict[str, str] = None, hooks: Dict[str, Callable] = None,
-                stream: bool = None, verify: StrOrBool = None, cert: StrOrStrTuple = None,
+                data: DictOrTupleListOrBytesOrFileLike = None, headers: dict = None,
+                cookies: DictOrCookieJar = None,
+                files: StrOrFileLike = None, auth: AuthTupleOrCallable = None,
+                timeout: FloatOrTuple = None,
+                allow_redirects=True, proxies: Dict[str, str] = None,
+                hooks: Dict[str, Callable] = None,
+                stream: bool = None, verify: StrOrBool = None,
+                cert: StrOrStrTuple = None,
                 json: str = None, user_activation: bool = False) -> Response:
         """Constructs a :class:`Request <Request>`, prepares it and sends it.
         Returns :class:`Response <Response>` object.
@@ -492,15 +502,16 @@ class Browser(Session):
             hostname to the URL of the proxy.
         :param stream: (optional) whether to immediately download the response
             content. Defaults to ``False``.
-        :param verify: (optional) Either a boolean, in which case it controls whether we verify
-            the server's TLS certificate, or a string, in which case it must be a path
-            to a CA bundle to use. Defaults to ``True``.
+        :param verify: (optional) Either a boolean, in which case it controls whether we
+            verify the server's TLS certificate, or a string, in which case it must
+            be a path to a CA bundle to use. Defaults to ``True``.
         :param cert: (optional) if String, path to ssl client cert file (.pem).
             If Tuple, ('cert', 'key') pair.
         :rtype: requests.Response
         """
         cookies = cookies if cookies is not None else self.cookies
-        self.headers = self._get_default_headers(method, parse_url(url), user_activation)
+        self.headers = self._get_default_headers(method, parse_url(url),
+                                                 user_activation)
         self.headers.update(headers if headers else {})
 
         # Create the Request.
@@ -520,7 +531,8 @@ class Browser(Session):
 
         log_request(prep)
 
-        prep.headers = CaseInsensitiveDict(sort_dict(dict(prep.headers), self._header_precedence))
+        prep.headers = CaseInsensitiveDict(
+            sort_dict(dict(prep.headers), self._header_precedence))
 
         proxies = proxies or {}
 
@@ -566,7 +578,8 @@ class Browser(Session):
         # Merge with session cookies
         cookie_jar = self.cookies.__new__(self.cookies.__class__)
         cookie_jar.__init__()
-        if isinstance(cookie_jar, TimelessRequestsCookieJar) and isinstance(self.cookies, TimelessRequestsCookieJar):
+        if isinstance(cookie_jar, TimelessRequestsCookieJar) and isinstance(
+                self.cookies, TimelessRequestsCookieJar):
             cookie_jar.mock_date = self.cookies.mock_date
         merged_cookies = merge_cookies(
             merge_cookies(cookie_jar, self.cookies), cookies)
@@ -583,18 +596,21 @@ class Browser(Session):
             files=request.files,
             data=request.data,
             json=request.json,
-            headers=merge_setting(request.headers, self.headers, dict_class=CaseInsensitiveDict),
+            headers=merge_setting(request.headers, self.headers,
+                                  dict_class=CaseInsensitiveDict),
             params=merge_setting(request.params, self.params),
             auth=merge_setting(auth, self.auth),
             cookies=merged_cookies,
             hooks=merge_hooks(request.hooks, self.hooks),
         )
-        p.headers = CaseInsensitiveDict(sort_dict(dict(p.headers), self._header_precedence))
+        p.headers = CaseInsensitiveDict(
+            sort_dict(dict(p.headers), self._header_precedence))
         return p
 
     # noinspection PyUnresolvedReferences
     def resolve_redirects(self, resp, req, stream=False, timeout=None,
-                          verify=True, cert=None, proxies=None, yield_requests=False, **adapter_kwargs):
+                          verify=True, cert=None, proxies=None, yield_requests=False,
+                          **adapter_kwargs):
         """Receives a Response. Returns a generator of Responses or Requests."""
 
         hist = []  # keep track of history
@@ -617,7 +633,8 @@ class Browser(Session):
                 resp.raw.read(decode_content=False)
 
             if len(resp.history) >= self.max_redirects:
-                raise TooManyRedirects('Exceeded %s redirects.' % self.max_redirects, response=resp)
+                raise TooManyRedirects('Exceeded %s redirects.' % self.max_redirects,
+                                       response=resp)
 
             # Release the connection back into the pool.
             resp.close()
@@ -650,7 +667,8 @@ class Browser(Session):
             self.rebuild_method(prepared_request, resp)
 
             # https://github.com/requests/requests/issues/1084
-            if resp.status_code not in (codes.temporary_redirect, codes.permanent_redirect):
+            if resp.status_code not in (
+                    codes.temporary_redirect, codes.permanent_redirect):
                 # https://github.com/requests/requests/issues/3490
                 purged_headers = ('Content-Length', 'Content-Type', 'Transfer-Encoding')
                 for header in purged_headers:
@@ -719,7 +737,8 @@ class Browser(Session):
                 rewind_body(prepared_request)
 
             # Override the original request.
-            prepared_request.headers = dict(sort_dict(prepared_request.headers, self._header_precedence))
+            prepared_request.headers = dict(
+                sort_dict(prepared_request.headers, self._header_precedence))
             req = prepared_request
             log_request(req)
 
@@ -745,10 +764,13 @@ class Browser(Session):
                 self._last_navigate = resp
                 yield resp
 
-    def _get_default_headers(self, method: str, url: Url, user_activation: bool) -> CaseInsensitiveDict:
-        """Provides the default headers the browser should send when connecting to an endpoint
+    def _get_default_headers(self, method: str, url: Url,
+                             user_activation: bool) -> CaseInsensitiveDict:
+        """Provides the default headers the browser should send when connecting to an
+        endpoint
 
-        The method tries to guess the mimetype and encoding to fill the Accept and Accept-Encoding headers
+        The method tries to guess the mimetype and encoding to fill the Accept and
+        Accept-Encoding headers
         :param method: The method of the HTTP request
         :param url: The url the browser is supposed to connect to
         :returns: A dictionary form of the default headers.
@@ -779,7 +801,8 @@ class Browser(Session):
         time_passed = datetime.now() - self._last_request_timestamp
         if time_passed < self._request_timeout:
             adapter = self.adapter
-            if url is not None and isinstance(adapter, FileCache) and adapter.is_hit(url) and adapter.is_active:
+            if url is not None and isinstance(adapter, FileCache) and adapter.is_hit(
+                    url) and adapter.is_active:
                 logger.debug("Request will be a hit in cache. No need to wait.")
                 return
             time_to_wait = self._request_timeout - time_passed
@@ -868,7 +891,8 @@ class Chrome(Browser):
         super(Chrome, self).__init__()
         self._name = 'Chrome'
         self._version = '.'.join(map(str, chrome_version))
-        self._user_agent = self.create_user_agent(os=os, version=chrome_version, webkit_version=webkit_version)
+        self._user_agent = self.create_user_agent(os=os, version=chrome_version,
+                                                  webkit_version=webkit_version)
         self._accept = [
             MimeTypeTag("text", "html"),
             MimeTypeTag("application", "xhtml+xml"),
@@ -907,11 +931,13 @@ class Chrome(Browser):
         ]
 
     @staticmethod
-    def create_user_agent(os=Windows(), version=CHROME_NEWEST, webkit_version=WEBKIT_NEWEST) -> str:
+    def create_user_agent(os=Windows(), version=CHROME_NEWEST,
+                          webkit_version=WEBKIT_NEWEST) -> str:
         """Creates a user agent string for Firefox
 
         :param os: The underlying operating system (default :py:class:`Windows`).
-        :param version: The version of the underlying webkit (default `(79, 0, 3945, 88)).
+        :param version: The version of the underlying webkit
+                        (default `(79, 0, 3945, 88)).
         :param webkit_version: The version of Chrome (default: (537, 36)).
         :returns: A custom user agent string.
         """
@@ -929,7 +955,8 @@ class Chrome(Browser):
         self._last_navigate = response
         return response
 
-    def _get_default_headers(self, method: str, url: Url, user_activation: bool) -> CaseInsensitiveDict:
+    def _get_default_headers(self, method: str, url: Url,
+                             user_activation: bool) -> CaseInsensitiveDict:
         adjust_accept_encoding = self._last_navigate is None
         if adjust_accept_encoding:
             self._accept_encoding = ['gzip', 'deflate']
@@ -954,5 +981,7 @@ class Chrome(Browser):
             if self._last_navigate is None:
                 request.headers['Sec-Fetch-Mode'] = 'navigate'
             else:
-                request.headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(request.method, url)
-        request.headers = CaseInsensitiveDict(sort_dict(dict(request.headers), self._header_precedence))
+                request.headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(
+                    request.method, url)
+        request.headers = CaseInsensitiveDict(
+            sort_dict(dict(request.headers), self._header_precedence))

@@ -114,7 +114,9 @@ class Browser(JsonObject):
 
 
 class PageTimings(JsonObject):
-    """This object describes timings for various events (states) fired during the page load."""
+    """
+    This object describes timings for various events (states) fired during the page load
+    """
 
     on_content_load: timedelta  # optional
     on_load: timedelta  # optional
@@ -275,7 +277,8 @@ class CacheStats(JsonObject):
             comment = f". {self.comment}"
         else:
             comment = ''
-        return f"{expires}Last access: {self.last_access}, Hits: {self.hit_count}{comment}"
+        return f"{expires}Last access: {self.last_access}, " \
+               f"Hits: {self.hit_count}{comment}"
 
 
 class Cache(JsonObject):
@@ -296,8 +299,10 @@ class Cache(JsonObject):
     @classmethod
     def from_dict(cls, data: dict) -> 'Cache':
         return cls(
-            before_request=CacheStats.from_dict(data['beforeRequest']) if 'beforeRequest' in data.keys() else None,
-            after_request=CacheStats.from_dict(data['afterRequest']) if 'afterRequest' in data.keys() else None,
+            before_request=CacheStats.from_dict(
+                data['beforeRequest']) if 'beforeRequest' in data.keys() else None,
+            after_request=CacheStats.from_dict(
+                data['afterRequest']) if 'afterRequest' in data.keys() else None,
             comment=data.get('comment', None)
         )
 
@@ -439,7 +444,8 @@ class Timings(JsonObject):
 
     def __str__(self) -> str:
         total = self.total
-        return f"total {str(total)} {self.comment if self.comment is not None else ''}".strip()
+        comment = self.comment if self.comment is not None else ''
+        return f"total {str(total)} {comment}".strip()
 
 
 class Entry(JsonObject):
@@ -574,7 +580,8 @@ class Entry(JsonObject):
             'status': response.status_code,
             'statusText': response.reason,
             'httpVersion': f"HTTP/{response.raw.version / 10}".strip('.0'),
-            'cookies': Entry._cookiejar_to_dicts(response.cookies, parse_url(response.url)),
+            'cookies': Entry._cookiejar_to_dicts(response.cookies,
+                                                 parse_url(response.url)),
             'headers': dict_to_dict_list(response.headers),
             'content': Entry._get_content(response),
             'redirectURL': response.headers.get('Location', ''),
@@ -602,7 +609,8 @@ class Entry(JsonObject):
     def _cookiejar_to_dicts(rcj: RequestsCookieJar, url: Url) -> list[dict]:
         cookies = []
         cookie: Cookie
-        for cookie in getattr(rcj, '_cookies', {}).get(url.hostname, {}).get(url.path, {}).values():
+        for cookie in getattr(rcj, '_cookies', {}).get(url.hostname, {}).get(
+                url.path, {}).values():
             cookie_dict = {
                 'name': cookie.name,
                 'value': cookie.value,
@@ -612,8 +620,10 @@ class Entry(JsonObject):
             if cookie.domain is not None:
                 cookie_dict['domain'] = cookie.domain
             if cookie.expires is not None:
-                cookie_dict['expires'] = datetime.fromtimestamp(cookie.expires).isoformat()
-            cookie_dict['httponly'] = 'httponly' in getattr(cookie, '_rest').keys() is not None
+                cookie_dict['expires'] = datetime.fromtimestamp(
+                    cookie.expires).isoformat()
+            cookie_dict['httponly'] = 'httponly' in getattr(cookie, '_rest').keys() \
+                                      is not None
             if cookie.secure is not None:
                 cookie_dict['secure'] = cookie.secure
             if cookie.comment is not None:
@@ -656,9 +666,12 @@ class Log(JsonObject):
         return cls(
             version=data['version'],
             creator=Creator.from_dict(data['creator']),
-            browser=Browser.from_dict(data['browser']) if 'browser' in data.keys() else None,
-            pages=list(map(Page.from_dict, data['pages'])) if 'pages' in data.keys() else None,
-            entries=list(map(Entry.from_dict, data.get('entries', []), repeat(adapter))),
+            browser=Browser.from_dict(
+                data['browser']) if 'browser' in data.keys() else None,
+            pages=list(
+                map(Page.from_dict, data['pages'])) if 'pages' in data.keys() else None,
+            entries=list(
+                map(Entry.from_dict, data.get('entries', []), repeat(adapter))),
             comment=data.get('comment')
         )
 
@@ -681,7 +694,8 @@ class Log(JsonObject):
             comment = f", {self.comment}"
         else:
             comment = ''
-        return f"Log {self.version} ({self.creator}): {len(self.entries)} entries{comment}"
+        return f"Log {self.version} ({self.creator}): " \
+               f"{len(self.entries)} entries{comment}"
 
 
 class Har(JsonObject):
@@ -714,7 +728,8 @@ class HarFile:
     _mode: str
     _adapter: HTTPAdapter
 
-    def __init__(self, file: Union[str, os.PathLike], adapter: HTTPAdapter, mode: str = 'r'):
+    def __init__(self, file: Union[str, os.PathLike], adapter: HTTPAdapter,
+                 mode: str = 'r'):
         if not isinstance(file, Path):
             file = Path(file)
         if not file.exists():

@@ -55,7 +55,8 @@ class CacheAdapter(HTTPAdapter, ABC):
         """
         Get whether the cache is in active mode.
 
-        If true, the CacheAdapter will check new requests against the local cache for hits.
+        If true, the CacheAdapter will check new requests against the local cache for
+        hits.
         Otherwise the CacheAdapter will not check for hits.
         """
         return self._is_active
@@ -65,7 +66,8 @@ class CacheAdapter(HTTPAdapter, ABC):
         """
         Set whether the cache is in active mode.
 
-        If set to True, the CacheAdapter will check new requests against the local cache for hits.
+        If set to True, the CacheAdapter will check new requests against the local cache
+        for hits.
         Otherwise the CacheAdapter will not check for hits.
         :param value: The new state of the CacheAdapter
         :type value: bool
@@ -79,7 +81,8 @@ class CacheAdapter(HTTPAdapter, ABC):
         """
         Get whether the cache is in passive mode.
 
-        If true, the CacheAdapter will cache the answer of a successful request in the cache.
+        If true, the CacheAdapter will cache the answer of a successful request in the
+        cache.
         Otherwise the CacheAdapter will not cache the answer.
         """
         return self._is_passive
@@ -89,7 +92,8 @@ class CacheAdapter(HTTPAdapter, ABC):
         """
         Set whether the cache is in passive mode.
 
-        If true, the CacheAdapter will cache the answer of a successful request in the cache.
+        If true, the CacheAdapter will cache the answer of a successful request in the
+        cache.
         Otherwise the CacheAdapter will not cache the answer.
         :param value: The new state of the CacheAdapter
         :type value: bool
@@ -140,7 +144,8 @@ class CacheAdapter(HTTPAdapter, ABC):
         session.adapters['https://'] = self
         session.adapters['http://'] = self
 
-    def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None
+    def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True,
+             cert=None, proxies=None
              ) -> Response:
         # Set indentation for aligned log messages
         self._indent = ' ' * len(request.method)
@@ -185,9 +190,10 @@ class CacheAdapter(HTTPAdapter, ABC):
     def _post_send(self, response: Response):
         pass
 
-    def _send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None,
-              proxies=None) -> Response:
-        return super(CacheAdapter, self).send(request, stream, timeout, verify, cert, proxies)
+    def _send(self, request: PreparedRequest, stream=False, timeout=None, verify=True,
+              cert=None, proxies=None) -> Response:
+        return super(CacheAdapter, self).send(request, stream, timeout, verify, cert,
+                                              proxies)
 
     def find_response(self, request: PreparedRequest) -> Optional[Response]:
         """

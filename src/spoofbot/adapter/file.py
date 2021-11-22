@@ -99,7 +99,8 @@ class FileCache(HTTPAdapter):
         """
         Set whether the cache is in active mode.
 
-        If set to True, the FileCache will check new requests against the local cache for hits.
+        If set to True, the FileCache will check new requests against the local cache
+        for hits.
         Otherwise the FileCache will not check for hits.
         :param value: The new state of the FileCache
         :type value: bool
@@ -113,7 +114,8 @@ class FileCache(HTTPAdapter):
         """
         Get whether the cache is in passive mode.
 
-        If true, the FileCache will cache the answer of a successful request in the cache.
+        If true, the FileCache will cache the answer of a successful request in the
+        cache.
         Otherwise the FileCache will not cache the answer.
         """
         return self._is_passive
@@ -123,7 +125,8 @@ class FileCache(HTTPAdapter):
         """
         Set whether the cache is in passive mode.
 
-        If true, the FileCache will cache the answer of a successful request in the cache.
+        If true, the FileCache will cache the answer of a successful request in the
+        cache.
         Otherwise the FileCache will not cache the answer.
         :param value: The new state of the FileCache
         :type value: bool
@@ -210,8 +213,8 @@ class FileCache(HTTPAdapter):
     def is_backing_up(self) -> bool:
         return self._backup is not None
 
-    def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None
-             ) -> Response:
+    def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True,
+             cert=None, proxies=None) -> Response:
         # Set indentation for aligned log messages
         self._indent = ' ' * len(request.method)
         filepath = to_filepath(request.url, self._cache_path, self._ignore_queries)
@@ -225,11 +228,14 @@ class FileCache(HTTPAdapter):
 
         # In offline mode, we cannot make new HTTP requests for cache misses
         if self._is_offline:
-            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(filepath))
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
+                                    str(filepath))
 
         # Send HTTP request to remote
-        response = super(FileCache, self).send(request, stream, timeout, verify, cert, proxies)
-        if self._is_passive and response.status_code in self._cache_on_status:  # Store received response in cache
+        response = super(FileCache, self).send(request, stream, timeout, verify, cert,
+                                               proxies)
+        if self._is_passive and response.status_code in self._cache_on_status:
+            # Store received response in cache
             if self._backup is not None:
                 self._backup.backup_request(request, filepath)
             self._save_response(response, filepath)
@@ -270,12 +276,14 @@ class FileCache(HTTPAdapter):
             from io import BytesIO
             return self.build_response(request, HTTPResponse(
                 body=BytesIO(b''),
-                headers={'Location': f"https://{os.readlink(str(filepath)).lstrip('./')}"},
+                headers={
+                    'Location': f"https://{os.readlink(str(filepath)).lstrip('./')}"},
                 status=302,
                 preload_content=False
             ))
         else:
-            raise NotImplementedError("File path exists but is neither a file nor a symlink?")
+            raise NotImplementedError(
+                "File path exists but is neither a file nor a symlink?")
 
     def _save_response(self, response: Response, filepath: Path):
         """
@@ -287,7 +295,8 @@ class FileCache(HTTPAdapter):
         :type filepath: Path
         """
         filepath.parent.mkdir(parents=True, exist_ok=True)
-        if response.is_redirect:  # If the response is a redirection, use a symlink to simulate that
+        if response.is_redirect:
+            # If the response is a redirection, use a symlink to simulate that
             redirect = response.headers['Location']
             if redirect.startswith('/'):  # Host-less url
                 redirect = parse_url(response.url).host + redirect
@@ -331,7 +340,8 @@ class FileCache(HTTPAdapter):
         del self._backup
         self._backup = None
 
-    def use_mode(self, active: bool = None, passive: bool = None, offline: bool = None) -> 'Mode':
+    def use_mode(self, active: bool = None, passive: bool = None,
+                 offline: bool = None) -> 'Mode':
         return Mode(self, active=active, passive=passive, offline=offline)
 
 
@@ -361,7 +371,8 @@ class Backup:
 
     def backup_request(self, request: PreparedRequest, filepath: Path = None):
         if filepath is None:
-            filepath = to_filepath(request.url, self._cache.cache_path, self._cache.ignore_queries)
+            filepath = to_filepath(request.url, self._cache.cache_path,
+                                   self._cache.ignore_queries)
         logger.debug(f"{' ' * len(request.method)}  Backup up cached request")
         if not filepath.exists():
             self._requests.append((request, None))
@@ -371,7 +382,8 @@ class Backup:
 
     def restore(self, request: PreparedRequest, data: Optional[bytes]):
         logger.debug("Restoring backup")
-        filepath = to_filepath(request.url, self._cache.cache_path, self._cache.ignore_queries)
+        filepath = to_filepath(request.url, self._cache.cache_path,
+                               self._cache.ignore_queries)
         assert filepath.exists()
         if data is None:
             filepath.unlink()
@@ -380,7 +392,8 @@ class Backup:
                 fp.write(data)
 
     def restore_all(self):
-        for req, data in reversed(self._requests):  # Reverse to rollback early backups at the end
+        for req, data in reversed(
+                self._requests):  # Reverse to rollback early backups at the end
             self.restore(req, data)
 
 
@@ -390,7 +403,8 @@ class Mode:
     _old_passive: bool
     _old_offline: bool
 
-    def __init__(self, cache: FileCache, active: bool = None, passive: bool = None, offline: bool = None):
+    def __init__(self, cache: FileCache, active: bool = None, passive: bool = None,
+                 offline: bool = None):
         self._cache = cache
         self._old_active = self._cache.is_active
         if active is not None:

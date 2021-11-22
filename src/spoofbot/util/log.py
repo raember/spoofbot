@@ -82,5 +82,7 @@ STATUS_COLOR_MESSAGE = {
 
 def log_response(response: Response):
     color, msg = STATUS_COLOR_MESSAGE.get(response.status_code, (fg_lred, 'UNKNOWN'))
-    logger.debug(f"{' ' * len(response.request.method)} \033[{color}m← {response.status_code} {msg}\033[0m "
-                 f"{response.headers.get('Content-Type', '-')}")
+    logger.debug(
+        f"{' ' * len(response.request.method)} \033[{color}m← "
+        f"{response.status_code} {msg}\033[0m "
+        f"{response.headers.get('Content-Type', '-')}")

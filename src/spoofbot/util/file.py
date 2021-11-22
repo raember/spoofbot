@@ -102,13 +102,16 @@ def to_filepath(
             continue
         key = quote_plus(key)
         val = quote_plus(val)
-        if i == 0:  # Preserve the question mark for identifying the query in the filepath
+        if i == 0:
+            # Preserve the question mark for identifying the query in the filepath
             key = f"?{key}"
         path /= f"{key}={val}"
-    return path.parent / (path.name + CACHE_FILE_SUFFIX)  # Suffix minimizes clash between files and directories
+    # Suffix minimizes clash between files and directories
+    return path.parent / (path.name + CACHE_FILE_SUFFIX)
 
 
-def to_url(filepath: Union[str, PathLike], root_path: Union[str, PathLike] = CACHE_DEFAULT_PATH) -> Url:
+def to_url(filepath: Union[str, PathLike],
+           root_path: Union[str, PathLike] = CACHE_DEFAULT_PATH) -> Url:
     """
     Derives the url of a given filesystem path in the cache
 
@@ -170,7 +173,8 @@ def get_symlink_path(from_path: Path, to_path: Path, root: Path) -> Path:
     ups = []
     downs = []
     divide_found = False
-    for from_part, to_part in zip_longest(from_path.parts[offset:], to_path.parts[offset:]):
+    for from_part, to_part in zip_longest(from_path.parts[offset:],
+                                          to_path.parts[offset:]):
         if from_part != to_part:
             divide_found = True
         if divide_found:

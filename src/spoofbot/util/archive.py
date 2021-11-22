@@ -20,14 +20,16 @@ def request_from_har_entry(entry: dict) -> tuple[Request, str]:
     request_entry = entry['request']
     data = {}
     if 'postData' in request_entry:
-        post_data = dict_list_to_tuple_list(request_entry['postData']['params'], case_insensitive=False)
+        post_data = dict_list_to_tuple_list(request_entry['postData']['params'],
+                                            case_insensitive=False)
         data = '&'.join(map('='.join, post_data))
         if len(data) == 0:
             data = request_entry['postData']['text']
     return Request(
         method=request_entry['method'].upper(),
         url=request_entry['url'],
-        headers=CaseInsensitiveDict(dict_list_to_dict(request_entry['headers'], case_insensitive=True)),
+        headers=CaseInsensitiveDict(
+            dict_list_to_dict(request_entry['headers'], case_insensitive=True)),
         data=data,
         cookies=dict_list_to_dict(request_entry['cookies'])
     ), request_entry['httpVersion'].upper()
@@ -37,15 +39,6 @@ def response_from_har_entry(entry: dict) -> Optional[HTTPResponse]:
     response_entry = entry['response']
     if response_entry is None:
         return None
-    # resp = Response()
-    # setattr(resp, '_content', response_entry['content'].get('text', '').encode('utf8'))
-    # status = int(response_entry['status'])
-    # resp.status_code = status
-    # resp.headers = CaseInsensitiveDict(dict_list_to_tuple_list(response_entry['headers']))
-    # resp.url = entry['request']['url']
-    # resp.reason = STATUS_COLOR_MESSAGE.get(status, (None, 'UNKNOWN'))[1]
-    # resp.cookies = cookiejar_from_dict(dict_list_to_dict(response_entry['cookies']))
-    # resp.elapsed = timedelta(entry.get('time', 0))
 
     headers = dict_list_to_tuple_list(response_entry['headers'])
     content: dict = response_entry['content']
@@ -62,7 +55,8 @@ def response_from_har_entry(entry: dict) -> Optional[HTTPResponse]:
         original_response=MockHTTPResponse(headers),
         version=response_entry.get('version', 'HTTP/1.1')
     )
-    resp.CONTENT_DECODERS = []  # Hack to prevent already decoded contents to be decoded again
+    # Hack to prevent already decoded contents to be decoded again
+    resp.CONTENT_DECODERS = []
     return resp
 
 
@@ -114,7 +108,8 @@ def response_from_flow(flow: HTTPFlow) -> Optional[HTTPResponse]:
         preload_content=False,
         original_response=MockHTTPResponse(headers.items())
     )
-    resp.CONTENT_DECODERS = []  # Hack to prevent already decoded contents to be decoded again
+    # Hack to prevent already decoded contents to be decoded again
+    resp.CONTENT_DECODERS = []
     return resp
 
 
@@ -131,7 +126,8 @@ def do_keys_match(
         cached_headers: CaseInsensitiveDict,
         indent_level: int
 ) -> bool:
-    if list(map(str.lower, dict(request_headers).keys())) != list(map(str.lower, dict(cached_headers).keys())):
+    if list(map(str.lower, dict(request_headers).keys())) != list(
+            map(str.lower, dict(cached_headers).keys())):
         print_diff(
             'data',
             f"({len(cached_headers)}) {', '.join(list(dict(cached_headers).keys()))}",
@@ -176,7 +172,8 @@ def are_dicts_same(
         logger.debug(f"{indent}Request {name} have the following mismatching entries:")
         for key in mismatching_keys:
             logger.debug(f"{indent}  · '{key}': '{request_dict[key]}'")
-            logger.debug(f"{indent}    {' ' * (len(key) + 2)}  does not equal expected {name[:-1]}:")
+            logger.debug(f"{indent}    {' ' * (len(key) + 2)}  does not equal expected "
+                         f"{name[:-1]}:")
             logger.debug(f"{indent}    {' ' * (len(key) + 2)}  '{cached_dict[key]}'")
         verdict = False
     return verdict
