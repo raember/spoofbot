@@ -205,7 +205,7 @@ class Page(JsonObject):
         return cls(
             started_datetime=parse(data['startedDateTime']),
             page_id=data['id'],
-            title=data['title'],
+            title=data.get('title', '<NO TITLE>'),  # Firefox be like...
             page_timings=PageTimings.from_dict(data['pageTimings']),
             comment=data.get('comment', None)
         )
@@ -390,14 +390,24 @@ class Timings(JsonObject):
         ssl = timedelta(seconds=float(data.get('ssl', 0.0)))
         if ssl.total_seconds() < 0.0:
             ssl = -1
+        # Firefox be like...
+        send = timedelta(seconds=float(data.get('send', 0.0)))
+        if send.total_seconds() < 0.0:
+            send = -1
+        wait = timedelta(seconds=float(data.get('wait', 0.0)))
+        if wait.total_seconds() < 0.0:
+            wait = -1
+        receive = timedelta(seconds=float(data.get('receive', 0.0)))
+        if receive.total_seconds() < 0.0:
+            receive = -1
         return cls(
             blocked=blocked,
             dns=dns,
             connect=connect,
             ssl=ssl,
-            send=timedelta(milliseconds=float(data['send'])),
-            wait=timedelta(milliseconds=float(data['wait'])),
-            receive=timedelta(milliseconds=float(data['receive'])),
+            send=send,
+            wait=wait,
+            receive=receive,
             comment=data.get('comment', None)
         )
 
