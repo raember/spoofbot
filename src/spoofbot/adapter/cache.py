@@ -241,3 +241,32 @@ class CacheAdapter(HTTPAdapter, ABC):
 
     def _delete(self, response: Response):
         raise NotImplementedError()
+
+
+class Mode:
+    """Sets a mode context for a given cache adapter"""
+    _cache: CacheAdapter
+    _old_active: bool
+    _old_passive: bool
+    _old_offline: bool
+
+    def __init__(self, cache: CacheAdapter, active: bool = None, passive: bool = None,
+                 offline: bool = None):
+        self._cache = cache
+        self._old_active = self._cache.is_active
+        if active is not None:
+            self._cache.is_active = active
+        self._old_passive = self._cache.is_passive
+        if passive is not None:
+            self._cache.is_passive = passive
+        self._old_offline = self._cache.is_offline
+        if offline is not None:
+            self._cache.is_offline = offline
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._cache.is_active = self._old_active
+        self._cache.is_passive = self._old_passive
+        self._cache.is_offline = self._old_offline

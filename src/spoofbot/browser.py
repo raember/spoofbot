@@ -14,7 +14,7 @@ from requests._internal_utils import to_native_string
 from requests.adapters import BaseAdapter
 from requests.cookies import extract_cookies_to_jar, merge_cookies, cookiejar_from_dict
 from requests.exceptions import ChunkedEncodingError, ContentDecodingError, \
-    TooManyRedirects
+    TooManyRedirects, RequestException
 from requests.sessions import merge_setting, merge_hooks
 from requests.structures import CaseInsensitiveDict
 from requests.utils import requote_uri, rewind_body, get_netrc_auth
@@ -416,7 +416,7 @@ class Browser(Session):
             try:
                 resp = self.get(link.url)
                 responses.append(resp)
-            except ConnectionError:
+            except RequestException:
                 pass
         return responses
 
