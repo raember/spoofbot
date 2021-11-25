@@ -138,6 +138,7 @@ class HarCache(CacheAdapter):
                                               proxies)
 
     def find_response(self, request: PreparedRequest) -> Optional[Response]:
+        # TODO: Find a consistent way to reintroduce the fast lookup-index
         for idx, entry in enumerate(self._har.log.entries):
             if self._match_requests(request, entry.request):
                 self._entry_idx = idx
