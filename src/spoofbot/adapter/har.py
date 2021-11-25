@@ -4,13 +4,14 @@ from typing import Optional, Union
 
 from loguru import logger
 from requests import Response, PreparedRequest, Session
+from urllib3.util import Url
 
 from spoofbot.adapter.cache import CacheAdapter
 from spoofbot.util import HarFile, cookie_header_to_dict, Entry, Timings, Har, Browser
 from spoofbot.util.archive import do_keys_match, are_dicts_same, print_diff
 
 
-class HarAdapter(CacheAdapter):
+class HarCache(CacheAdapter):
     _har_file: HarFile
     _har: Har
     _mode: str
@@ -20,6 +21,7 @@ class HarAdapter(CacheAdapter):
     _entry_idx: int
     _started_timestamp: datetime
     _expect_new_entry: bool
+    _url: Url
 
     def __init__(
             self,
@@ -28,12 +30,35 @@ class HarAdapter(CacheAdapter):
             is_offline: bool = False,
             is_passive: bool = True,
             delete_after_hit: bool = False,
-            mode: str = 'r+',
+            mode: str = 'r',
             match_headers: bool = True,
             match_header_order: bool = False,
             match_data: bool = True
     ):
-        super(HarAdapter, self).__init__(
+        """
+        Creates a cache HTTP adapter that is based on an HAR file.
+
+        :param cache_path: The path to the HAR file
+        :type cache_path: Union[str, os.PathLike]
+        :param is_active: Whether the cache should be checked for hits. Default: True
+        :type is_active: bool
+        :param is_offline: Whether to block outgoing HTTP requests. Default: False
+        :type is_offline: bool
+        :param is_passive: Whether to store responses in the cache. Default: True
+        :type is_passive: bool
+        :param delete_after_hit: Whether to delete responses from the cache. Default:
+            False
+        :type delete_after_hit: bool
+        :param mode: In what mode the HAR file should be opened. Default: r
+        :type mode: str
+        :param match_headers: Whether to check for headers to match. Default: True
+        :type match_headers: bool
+        :param match_header_order: Whether to check for the header order to match:
+        Default: False
+        :type match_header_order: bool
+        :param match_data: Whether to check for the request body to match. Default: True
+        """
+        super(HarCache, self).__init__(
             cache_path=cache_path,
             is_active=is_active,
             is_offline=is_offline,
@@ -46,6 +71,9 @@ class HarAdapter(CacheAdapter):
         self._match_data = match_data
         self._entry_idx = -1
         self._expect_new_entry = False
+        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self._har_file = HarFile(self._cache_path, self, self._mode)
+        self._har = self._har_file.har
 
     @property
     def har_file(self) -> HarFile:
@@ -56,7 +84,7 @@ class HarAdapter(CacheAdapter):
         return self._har
 
     def __enter__(self):
-        self._har_file = HarFile(self._cache_path, self, self._mode).__enter__()
+        self._har_file.__enter__()
         self._har = self._har_file.har
         return self
 
@@ -76,7 +104,7 @@ class HarAdapter(CacheAdapter):
             setattr(response.raw, '_connection', None)
 
     def prepare_session(self, session: Session):
-        super(HarAdapter, self).prepare_session(session)
+        super(HarCache, self).prepare_session(session)
         from spoofbot import Browser as SBBrowser
         if isinstance(session, SBBrowser):
             self._har.log.browser = Browser(
@@ -145,15 +173,9 @@ class HarAdapter(CacheAdapter):
             return success
         return False
 
-    def _raise_for_offline(self, request: PreparedRequest):
-        logger.error(
-            f"{self._indent}Failed to find request in cache while in offline mode")
-        raise ValueError(
-            f"Could not find cached request for [{request.method}] {request.url}")
-
     def _store_response(self, response: Response):
         ip, port = None, None
-        conn = getattr(response.raw, '_connection')
+        conn = getattr(response.raw, '_connection', None)
         if conn is not None and not getattr(conn.sock, '_closed'):
             ip, port = conn.sock.getpeername()
             port = str(port)
@@ -170,9 +192,9 @@ class HarAdapter(CacheAdapter):
                 wait=response.elapsed,
                 receive=timedelta(0)
             ),
-            page_ref=self._har.log.pages[
-                -1].id if self._har.log.pages is not None and len(
-                self._har.log.pages) > 0 else None,
+            page_ref=self._har.log.pages[-1].id
+            if self._har.log.pages is not None and
+               len(self._har.log.pages) > 0 else None,
             server_ip_address=ip,
             connection=port,
             comment=None

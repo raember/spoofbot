@@ -24,8 +24,23 @@ class CacheAdapter(HTTPAdapter, ABC):
             is_active: bool = True,
             is_offline: bool = False,
             is_passive: bool = True,
-            delete_after_hit: bool = True
+            delete_after_hit: bool = False
     ):
+        """
+        Creates an HTTPAdapter that supports cache-functionality.
+
+        :param cache_path: The path to the cache
+        :type cache_path: Union[str, os.PathLike]
+        :param is_active: Whether the cache should be checked for hits. Default: True
+        :type is_active: bool
+        :param is_offline: Whether to block outgoing HTTP requests. Default: False
+        :type is_offline: bool
+        :param is_passive: Whether to store responses in the cache. Default: True
+        :type is_passive: bool
+        :param delete_after_hit: Whether to delete responses from the cache. Default:
+            False
+        :type delete_after_hit: bool
+        """
         super(CacheAdapter, self).__init__()
         if not isinstance(cache_path, Path):
             cache_path = Path(cache_path)
@@ -34,6 +49,8 @@ class CacheAdapter(HTTPAdapter, ABC):
         self._is_offline = is_offline
         self._is_passive = is_passive
         self._delete_after_hit = delete_after_hit
+        self._hit = False
+        self._indent = ''
 
     @property
     def cache_path(self) -> Path:
@@ -167,15 +184,18 @@ class CacheAdapter(HTTPAdapter, ABC):
             self._raise_for_offline(request)
 
         # Send HTTP request to remote
+        # noinspection PyTypeChecker
+        response: Response = None
         try:
             response = self._send(request, stream, timeout, verify, cert, proxies)
         except RequestException as ex:
             # In case the request fails, we still might want to save it
             logger.error(ex)
             response = self.build_response(request, HTTPResponse(body=''))
-            # self._handle_response(response)
-            # raise
-        self._handle_response(response)
+            self._handle_response(response)
+            raise
+        else:
+            self._handle_response(response)
         return response
 
     def _handle_response(self, response: Response):
@@ -206,8 +226,15 @@ class CacheAdapter(HTTPAdapter, ABC):
         """
         raise NotImplementedError()
 
+    def use_mode(self, active: bool = None, passive: bool = None,
+                 offline: bool = None) -> 'Mode':
+        return Mode(self, active=active, passive=passive, offline=offline)
+
     def _raise_for_offline(self, request: PreparedRequest):
-        raise NotImplementedError()
+        logger.error(
+            f"{self._indent}Failed to find request in cache while in offline mode")
+        raise ValueError(
+            f"Could not find cached request for [{request.method}] {request.url}")
 
     def _store_response(self, response: Response):
         raise NotImplementedError()
