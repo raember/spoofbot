@@ -1,7 +1,6 @@
 import json
 import logging
 import unittest
-from base64 import b64decode
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -13,7 +12,7 @@ from bs4.element import Tag
 from requests import Response
 
 from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux
-from spoofbot.adapter import ArchiveCache
+from spoofbot.adapter import HarCache
 from spoofbot.util import encode_form_data, TimelessRequestsCookieJar
 
 logging.basicConfig(level=logging.DEBUG)
@@ -42,11 +41,8 @@ class WuxiaWorldTest(unittest.TestCase):
             MimeTypeTag("application", "xml", q=0.9),
             MimeTypeTag("*", "*", q=0.8)
         ]
-        cls.browser.adapter = ArchiveCache(
-            load_har(p / 'test_data/www.wuxiaworld.com_Archive_ALL.har'),
-            # Important to transfer the TimelessRequestsCookieJar instance!
-            session=cls.browser
-        )
+        cls.browser.adapter = HarCache(p /
+                                       'test_data/www.wuxiaworld.com_Archive_ALL.har')
 
     def test_01_main_site(self):
         self.browser.transfer_encoding = 'Trailers'
@@ -150,7 +146,7 @@ class WuxiaWorldTest(unittest.TestCase):
                 'Origin': None,
             })
         self.assertEqual(200, resp.status_code)
-        img: Image = PIL.Image.open(BytesIO(b64decode(resp.content)))
+        img: Image = PIL.Image.open(BytesIO(resp.content))
         self.assertEqual(208, img.width)
         self.assertEqual(277, img.height)
 
@@ -177,7 +173,7 @@ class ChromeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Chrome(chrome_version=(79, 0, 3945, 130))
-        cls.browser.adapter = ArchiveCache(load_har(p / 'test_data/chrome_full.har'))
+        cls.browser.adapter = HarCache(p / 'test_data/chrome_full.har')
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()
@@ -582,7 +578,7 @@ class FirefoxTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.browser = Firefox(ff_version=(72, 0))
-        cls.browser.adapter = ArchiveCache(load_har(p / 'test_data/ff_full.har'))
+        cls.browser.adapter = HarCache(p / 'test_data/ff_full.har')
         cls.duckduckgo_navigate = Response()
         cls.duckduckgo_navigate.url = 'https://duckduckgo.com/'
         cls.httpbin_navigate = Response()
