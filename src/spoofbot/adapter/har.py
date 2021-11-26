@@ -12,6 +12,13 @@ from spoofbot.util.archive import do_keys_match, are_dicts_same, print_diff
 
 
 class HarCache(CacheAdapter):
+    """
+    HAR cache adapter.
+
+    This HTTPAdapter provides an interface to a HAR (HTTP archive) file. It can read
+    and write HAR files and can be used to find stored responses to corresponding
+    requests.
+    """
     _har_file: HarFile
     _har: Har
     _mode: str

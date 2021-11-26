@@ -4,29 +4,63 @@ import os
 from abc import ABC
 from datetime import datetime, timedelta
 from http.cookiejar import Cookie
+from io import BytesIO
 from itertools import repeat
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Union, TextIO
+from urllib import request
 from urllib.parse import urlparse
-from urllib.request import Request
 
 from dateutil.parser import parse
 # https://w3c.github.io/web-performance/specs/HAR/Overview.html
 from requests import PreparedRequest, Response
-from requests.adapters import HTTPAdapter
+from requests import Request
+from requests.adapters import HTTPAdapter, CaseInsensitiveDict, HTTPResponse
 from requests.cookies import RequestsCookieJar
 from urllib3.util import Url, parse_url
 
-from spoofbot.util import dict_to_dict_list, url_to_query_dict_list, query_to_dict_list
-from spoofbot.util.archive import request_from_har_entry, response_from_har_entry
+from spoofbot.util.common import dict_to_dict_list, url_to_query_dict_list, \
+    query_to_dict_list, dict_list_to_tuple_list, dict_list_to_dict
+from spoofbot.util.file import MockHTTPResponse
 
 
 class JsonObject(ABC):
+    _custom_properties: dict
+
+    def __init__(self):
+        self._custom_properties = {}
+
     @classmethod
     def from_dict(cls, *args):
         """Create an instance from a json dict and possible additional args"""
         raise NotImplementedError()
+
+    @property
+    def custom_properties(self) -> dict:
+        return self._custom_properties
+
+    @custom_properties.setter
+    def custom_properties(self, value: dict):
+        self._test_are_custom_properties(value)
+        self._custom_properties = value
+
+    @staticmethod
+    def _test_are_custom_properties(data: dict):
+        if not all(map(str.startswith, zip(data, repeat('_')))):
+            raise ValueError("All custom properties have to start with '_'.")
+
+    def _setup_custom_properties(self, data: dict) -> 'JsonObject':
+        self._custom_properties = self._extract_custom_properties(data)
+        return self
+
+    @staticmethod
+    def _extract_custom_properties(data: dict) -> dict:
+        props = {}
+        for k, v in data.items():
+            if k.startswith('_'):
+                props[k] = v
+        return props
 
     def to_dict(self) -> dict:
         """Serialize object to a json dict"""
@@ -47,6 +81,7 @@ class Creator(JsonObject):
             version: str,
             comment: str = None
     ):
+        super().__init__()
         self.name = name
         self.version = version
         self.comment = comment
@@ -57,7 +92,7 @@ class Creator(JsonObject):
             name=data['name'],
             version=data['version'],
             comment=data.get('comment', None)
-        )
+        )._setup_custom_properties(data)
 
     def to_dict(self) -> dict:
         data = {
@@ -66,6 +101,7 @@ class Creator(JsonObject):
         }
         if self.comment is not None:
             data['comment'] = self.comment
+        data.update(self.custom_properties)
         return data
 
     def __str__(self) -> str:
@@ -87,6 +123,7 @@ class Browser(JsonObject):
             version: str,
             comment: str = None
     ):
+        super().__init__()
         self.name = name
         self.version = version
         self.comment = comment
@@ -97,7 +134,7 @@ class Browser(JsonObject):
             name=data['name'],
             version=data['version'],
             comment=data.get('comment', None)
-        )
+        )._setup_custom_properties(data)
 
     def to_dict(self) -> dict:
         data = {
@@ -106,6 +143,7 @@ class Browser(JsonObject):
         }
         if self.comment is not None:
             data['comment'] = self.comment
+        data.update(self.custom_properties)
         return data
 
     def __str__(self) -> str:
@@ -128,6 +166,7 @@ class PageTimings(JsonObject):
             on_load: timedelta = None,
             comment: str = None
     ):
+        super().__init__()
         self.on_content_load = on_content_load
         self.on_load = on_load
         self.comment = comment
@@ -146,16 +185,17 @@ class PageTimings(JsonObject):
             on_content_load=on_content_load,
             on_load=on_load,
             comment=data.get('comment', None)
-        )
+        )._setup_custom_properties(data)
 
     def to_dict(self) -> dict:
         data = {}
         if self.on_content_load is not None:
-            data['onContentLoad'] = int(self.on_content_load.total_seconds() * 1000)
+            data['onContentLoad'] = self.on_content_load.total_seconds() * 1000
         if self.on_load is not None:
-            data['onLoad'] = int(self.on_load.total_seconds() * 1000)
+            data['onLoad'] = self.on_load.total_seconds() * 1000
         if self.comment is not None:
             data['comment'] = self.comment
+        data.update(self.custom_properties)
         return data
 
     def __str__(self) -> str:
@@ -194,6 +234,7 @@ class Page(JsonObject):
             page_timings: PageTimings,
             comment: str = None,
     ):
+        super().__init__()
         self.started_datetime = started_datetime
         self.id = page_id
         self.title = title
@@ -208,7 +249,7 @@ class Page(JsonObject):
             title=data.get('title', '<NO TITLE>'),  # Firefox be like...
             page_timings=PageTimings.from_dict(data['pageTimings']),
             comment=data.get('comment', None)
-        )
+        )._setup_custom_properties(data)
 
     def to_dict(self) -> dict:
         data = {
@@ -219,6 +260,7 @@ class Page(JsonObject):
         }
         if self.comment is not None:
             data['comment'] = self.comment
+        data.update(self.custom_properties)
         return data
 
     def __str__(self) -> str:
@@ -241,6 +283,7 @@ class CacheStats(JsonObject):
             expires: datetime = None,
             comment: str = None
     ):
+        super().__init__()
         self.expires = expires
         self.last_access = last_access
         self.e_tag = e_tag
@@ -255,7 +298,7 @@ class CacheStats(JsonObject):
             e_tag=data['eTag'],
             hit_count=int(data['hitCount']),
             comment=data.get('comment', None)
-        )
+        )._setup_custom_properties(data)
 
     def to_dict(self) -> dict:
         data = {}
@@ -266,6 +309,7 @@ class CacheStats(JsonObject):
         data['hitCount'] = self.hit_count
         if self.comment is not None:
             data['comment'] = self.comment
+        data.update(self.custom_properties)
         return data
 
     def __str__(self) -> str:
@@ -292,6 +336,7 @@ class Cache(JsonObject):
             after_request: CacheStats = None,
             comment: str = None
     ):
+        super().__init__()
         self.before_request = before_request
         self.after_request = after_request
         self.comment = comment
@@ -304,7 +349,7 @@ class Cache(JsonObject):
             after_request=CacheStats.from_dict(
                 data['afterRequest']) if 'afterRequest' in data.keys() else None,
             comment=data.get('comment', None)
-        )
+        )._setup_custom_properties(data)
 
     def to_dict(self) -> dict:
         data = {}
@@ -314,6 +359,7 @@ class Cache(JsonObject):
             data['afterRequest'] = self.after_request.to_dict()
         if self.comment is not None:
             data['comment'] = self.comment
+        data.update(self.custom_properties)
         return data
 
     def __str__(self) -> str:
@@ -348,6 +394,7 @@ class Timings(JsonObject):
             ssl: timedelta = timedelta(-1),
             comment: str = None
     ):
+        super().__init__()
         self.blocked = blocked
         self.dns = dns
         self.connect = connect
@@ -366,6 +413,8 @@ class Timings(JsonObject):
             total += self.dns
         if self.connect is not None and self.connect.total_seconds() > 0.0:
             total += self.connect
+        # NOTE: Google Chrome seems to not consider the ssl timespan to be part of
+        # the overall request/response time
         if self.ssl is not None and self.ssl.total_seconds() > 0.0:
             total += self.ssl
         if self.send.total_seconds() > 0.0:
@@ -378,26 +427,26 @@ class Timings(JsonObject):
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Timings':
-        blocked = timedelta(seconds=float(data.get('blocked', 0.0)))
+        blocked = timedelta(milliseconds=float(data.get('blocked', -1)))
         if blocked.total_seconds() < 0.0:
             blocked = -1
-        dns = timedelta(seconds=float(data.get('dns', 0.0)))
+        dns = timedelta(milliseconds=float(data.get('dns', -1)))
         if dns.total_seconds() < 0.0:
             dns = -1
-        connect = timedelta(seconds=float(data.get('connect', 0.0)))
+        connect = timedelta(milliseconds=float(data.get('connect', -1)))
         if connect.total_seconds() < 0.0:
             connect = -1
-        ssl = timedelta(seconds=float(data.get('ssl', 0.0)))
+        ssl = timedelta(milliseconds=float(data.get('ssl', -1)))
         if ssl.total_seconds() < 0.0:
             ssl = -1
         # Firefox be like...
-        send = timedelta(seconds=float(data.get('send', 0.0)))
+        send = timedelta(milliseconds=float(data.get('send', -1)))
         if send.total_seconds() < 0.0:
             send = -1
-        wait = timedelta(seconds=float(data.get('wait', 0.0)))
+        wait = timedelta(milliseconds=float(data.get('wait', -1)))
         if wait.total_seconds() < 0.0:
             wait = -1
-        receive = timedelta(seconds=float(data.get('receive', 0.0)))
+        receive = timedelta(milliseconds=float(data.get('receive', -1)))
         if receive.total_seconds() < 0.0:
             receive = -1
         return cls(
@@ -409,7 +458,7 @@ class Timings(JsonObject):
             wait=wait,
             receive=receive,
             comment=data.get('comment', None)
-        )
+        )._setup_custom_properties(data)
 
     def to_dict(self) -> dict:
         data = {}
@@ -417,39 +466,40 @@ class Timings(JsonObject):
             if isinstance(self.blocked, int):
                 data['blocked'] = self.blocked
             else:
-                data['blocked'] = max(int(self.blocked.total_seconds() * 1000), -1)
+                data['blocked'] = max(self.blocked.total_seconds() * 1000, -1)
         if self.dns is not None:
             if isinstance(self.dns, int):
                 data['dns'] = self.dns
             else:
-                data['dns'] = max(int(self.dns.total_seconds() * 1000), -1)
+                data['dns'] = max(self.dns.total_seconds() * 1000, -1)
         if self.connect is not None:
             if isinstance(self.connect, int):
                 data['connect'] = self.connect
             else:
-                data['connect'] = max(int(self.connect.total_seconds() * 1000), -1)
+                data['connect'] = max(self.connect.total_seconds() * 1000, -1)
         if self.ssl is not None:
             if isinstance(self.ssl, int):
                 data['ssl'] = self.ssl
             else:
-                data['ssl'] = max(int(self.ssl.total_seconds() * 1000), -1)
+                data['ssl'] = max(self.ssl.total_seconds() * 1000, -1)
         if self.send is not None:
             if isinstance(self.send, int):
                 data['send'] = self.send
             else:
-                data['send'] = max(int(self.send.total_seconds() * 1000), -1)
+                data['send'] = max(self.send.total_seconds() * 1000, -1)
         if self.wait is not None:
             if isinstance(self.wait, int):
                 data['wait'] = self.wait
             else:
-                data['wait'] = max(int(self.wait.total_seconds() * 1000), -1)
+                data['wait'] = max(self.wait.total_seconds() * 1000, -1)
         if self.receive is not None:
             if isinstance(self.receive, int):
                 data['receive'] = self.receive
             else:
-                data['receive'] = max(int(self.receive.total_seconds() * 1000), -1)
+                data['receive'] = max(self.receive.total_seconds() * 1000, -1)
         if self.comment is not None:
             data['comment'] = self.comment
+        data.update(self.custom_properties)
         return data
 
     def __str__(self) -> str:
@@ -465,9 +515,15 @@ class Entry(JsonObject):
     started_datetime: datetime
     time: timedelta
     request: PreparedRequest
+    _request_props: dict
+    _post_data_props: dict
     response: Response
+    _response_props: dict
+    _content_props: dict
     cache: dict
+    _cache_props: dict
     timings: Timings
+    _timings_props: dict
     server_ip_address: str  # optional
     connection: str  # optional
     comment: str  # optional
@@ -483,32 +539,112 @@ class Entry(JsonObject):
             page_ref: str = None,
             server_ip_address: str = None,
             connection: str = None,
-            comment: str = None
+            comment: str = None,
+            request_props: dict = None,
+            post_data_props: dict = None,
+            response_props: dict = None,
+            content_props: dict = None,
+            cache_props: dict = None,
+            timings_props: dict = None
     ):
+        super().__init__()
         self.started_datetime = started_datetime
         self.time = time
         self.request = request
+        if request_props is None:
+            request_props = {}
+        self._request_props = request_props
+        if post_data_props is None:
+            post_data_props = {}
+        self._post_data_props = post_data_props
         self.response = response
+        if response_props is None:
+            response_props = {}
+        self._response_props = response_props
+        if content_props is None:
+            content_props = {}
+        self._content_props = content_props
         if cache is None:
             cache = {}
         self.cache = cache
+        if cache_props is None:
+            cache_props = {}
+        self._cache_props = cache_props
         self.timings = timings
+        if timings_props is None:
+            timings_props = {}
+        self._timings_props = timings_props
         self.page_ref = page_ref
         self.server_ip_address = server_ip_address
         self.connection = connection
         self.comment = comment
 
+    @property
+    def request_props(self) -> dict:
+        return self._request_props
+
+    @request_props.setter
+    def request_props(self, value: dict):
+        self._test_are_custom_properties(value)
+        self._request_props = value
+
+    @property
+    def post_data_props(self) -> dict:
+        return self._post_data_props
+
+    @post_data_props.setter
+    def post_data_props(self, value: dict):
+        self._test_are_custom_properties(value)
+        self._post_data_props = value
+
+    @property
+    def response_props(self) -> dict:
+        return self._response_props
+
+    @response_props.setter
+    def response_props(self, value: dict):
+        self._test_are_custom_properties(value)
+        self._response_props = value
+
+    @property
+    def content_props(self) -> dict:
+        return self._content_props
+
+    @content_props.setter
+    def content_props(self, value: dict):
+        self._test_are_custom_properties(value)
+        self._content_props = value
+
+    @property
+    def cache_props(self) -> dict:
+        return self._cache_props
+
+    @cache_props.setter
+    def cache_props(self, value: dict):
+        self._test_are_custom_properties(value)
+        self._cache_props = value
+
+    @property
+    def timings_props(self) -> dict:
+        return self._timings_props
+
+    @timings_props.setter
+    def timings_props(self, value: dict):
+        self._test_are_custom_properties(value)
+        self._timings_props = value
+
     @classmethod
     def from_dict(cls, data: dict, adapter: HTTPAdapter = None) -> 'Entry':
         if adapter is None:
             adapter = HTTPAdapter()
-        req, httpver = request_from_har_entry(data)
+        req = cls._req_from_dict(data)
+        httpver = data['request']['httpVersion'].upper()
         preq = req.prepare()
-        hresp = response_from_har_entry(data)
-        if httpver.upper().startswith('HTTP/'):
+        hresp = cls._resp_from_dict(data)
+        if httpver.startswith('HTTP/'):
             hresp.version = int(httpver.split('/')[1].replace('.', '').ljust(2, '0'))
         resp: Response = adapter.build_response(preq, hresp)
-        resp.elapsed = timedelta(milliseconds=int(data['time']))
+        resp.elapsed = timedelta(milliseconds=data['time'])
         resp.reason = data['response']['statusText']
         return cls(
             page_ref=data.get('pageref', None),
@@ -520,91 +656,190 @@ class Entry(JsonObject):
             timings=Timings.from_dict(data['timings']),
             server_ip_address=data.get('serverIPAddress', None),
             connection=data.get('connection', None),
-            comment=data.get('comment', None)
+            comment=data.get('comment', None),
+            request_props=cls._extract_custom_properties(data['request']),
+            post_data_props=cls._extract_custom_properties(data['request'].get(
+                'postData', {})),
+            response_props=cls._extract_custom_properties(data['response']),
+            content_props=cls._extract_custom_properties(data['response']['content']),
+            cache_props=cls._extract_custom_properties(data['cache']),
+            timings_props=cls._extract_custom_properties(data['timings'])
+        )._setup_custom_properties(data)
+
+    @classmethod
+    def _req_from_dict(cls, entry_data: dict) -> Request:
+        request_data = entry_data['request']
+        data = {}
+        if 'postData' in request_data:
+            post_data = dict_list_to_tuple_list(request_data['postData']['params'],
+                                                case_insensitive=False)
+            data = '&'.join(map('='.join, post_data))
+            if len(data) == 0:
+                data = request_data['postData']['text']
+        return Request(
+            method=request_data['method'].upper(),
+            url=request_data['url'],
+            headers=CaseInsensitiveDict(
+                dict_list_to_dict(request_data['headers'], case_insensitive=True)),
+            data=data,
+            cookies=dict_list_to_dict(request_data['cookies'])
         )
+
+    @classmethod
+    def _resp_from_dict(cls, entry_data: dict) -> HTTPResponse:
+        response_entry = entry_data['response']
+        headers = dict_list_to_tuple_list(response_entry['headers'])
+        content: dict = response_entry['content']
+        encoding = content.get('encoding', None)
+        if encoding == 'base64':
+            body = base64.b64decode(content.get('text', ''))
+        else:
+            body = content.get('text', '').encode('utf8')
+        resp = HTTPResponse(
+            body=BytesIO(body),
+            headers=headers,
+            status=response_entry['status'],
+            preload_content=False,
+            original_response=MockHTTPResponse(headers),
+            version=response_entry.get('version', 'HTTP/1.1')
+        )
+        compression = content.get('compression', None)
+        if compression is not None:
+            setattr(resp, 'compression', compression)
+        # Hack to prevent already decoded contents to be decoded again
+        resp.CONTENT_DECODERS = []
+        return resp
 
     def to_dict(self) -> dict:
         data = {}
         if self.page_ref is not None:
             data['pageref'] = self.page_ref
         data['startedDateTime'] = self.started_datetime.isoformat()
-        data['time'] = int(self.time.total_seconds() * 1000)
-        data['request'] = self._req_to_dict(self.request, self.response.raw.version)
+        data['time'] = self.time.total_seconds() * 1000
+        data['request'] = self._req_to_dict()
         data['response'] = self._resp_to_dict(self.response)
         data['cache'] = self.cache
+        data['cache'].update(self._cache_props)
         data['timings'] = self.timings.to_dict()
+        data['timings'].update(self._timings_props)
         if self.server_ip_address is not None:
             data['serverIPAddress'] = self.server_ip_address
         if self.connection is not None:
             data['connection'] = self.connection
         if self.comment is not None:
             data['comment'] = self.comment
+        data.update(self.custom_properties)
         return data
 
-    @staticmethod
-    def _req_to_dict(request: PreparedRequest, http_version: int) -> dict:
-        cookie_jar: RequestsCookieJar = getattr(request, '_cookies')
+    def _req_to_dict(self) -> dict:
+        cookie_jar: RequestsCookieJar = getattr(self.request, '_cookies')
         f_cookies_for_request = getattr(cookie_jar, '_cookies_for_request')
-        cookies = Entry._cookiejar_to_dicts(f_cookies_for_request(Request(
-            url=request.url,
-            data=request.body,
-            method=request.method,
+        cookies = self._cookiejar_to_dicts(f_cookies_for_request(request.Request(
+            url=self.request.url,
+            data=self.request.body,
+            method=self.request.method,
         )),
-            url=parse_url(request.url)
+            url=parse_url(self.request.url)
         )
-        url = urlparse(request.url)
+        url = urlparse(self.request.url)
         endpoint = url.path
         if len(url.query) > 0:
             endpoint += f"?{url.query}"
-        http_ver_str = f"HTTP/{http_version / 10.0}".strip('.0')
-        header_size = len(f"{request.method} {endpoint} {http_ver_str}.\n")
-        for key, value in request.headers.items():
+        http_version = self.response.raw.version
+        if isinstance(http_version, int):
+            http_version = f"HTTP/{http_version / 10.0}".strip('.0')
+        header_size = len(f"{self.request.method} {endpoint} {http_version}.\n")
+        for key, value in self.request.headers.items():
             header_size += len(f"{key}: {value}\n")
         header_size += 2  # 2 CRLF
         data = {
-            'bodySize': len(request.body) if request.body is not None else 0,
-            'method': request.method.upper(),
-            'url': request.url,
-            'httpVersion': http_ver_str,
-            'headers': dict_to_dict_list(request.headers),
+            'bodySize': len(self.request.body) if self.request.body is not None else 0,
+            'method': self.request.method.upper(),
+            'url': self.request.url,
+            'httpVersion': http_version,
+            'headers': dict_to_dict_list(self.request.headers),
             'cookies': cookies,
-            'queryString': url_to_query_dict_list(request.url),
-            'headersSize': header_size
+            'queryString': url_to_query_dict_list(self.request.url),
+            'headerSize': header_size
         }
-        if request.method.upper() == 'POST':
-            mimetype = request.headers.get('Content-Type', '')
+        if self.request.method.upper() == 'POST':
+            mimetype = self.request.headers.get('Content-Type', '')
+            params = []
             if mimetype == 'application/x-www-form-urlencoded':
-                params = query_to_dict_list(request.body)
-            else:
-                params = []
-            data['postData'] = {
-                'mimeType': mimetype,
-                'params': params,
-                'text': request.body
-            }
+                params = query_to_dict_list(self.request.body)
+            if self.request.body is not None:
+                data['postData'] = {
+                    'mimeType': mimetype,
+                    'params': params,
+                    'text': self.request.body
+                }
+                data['bodySize'] = len(self.request.body)
+                data['postData'].update(self._post_data_props)
+        data.update(self._request_props)
         return data
 
-    @staticmethod
-    def _resp_to_dict(response: Response) -> dict:
-        return {
+    def _resp_to_dict(self, response: Response) -> dict:
+        http_version = response.raw.version
+        if isinstance(http_version, int):
+            http_version = f"HTTP/{response.raw.version / 10}".strip('.0')
+        data = {
             'status': response.status_code,
             'statusText': response.reason,
-            'httpVersion': f"HTTP/{response.raw.version / 10}".strip('.0'),
-            'cookies': Entry._cookiejar_to_dicts(response.cookies,
-                                                 parse_url(response.url)),
+            'httpVersion': http_version,
+            'cookies': self._cookiejar_to_dicts(response.cookies,
+                                                parse_url(response.url)),
             'headers': dict_to_dict_list(response.headers),
-            'content': Entry._get_content(response),
+            'content': self._get_content(response),
             'redirectURL': response.headers.get('Location', ''),
-            'headerSize': 0,
-            'bodySize': len(response.content) if response.content is not None else -1,
+            'headerSize': Entry._get_resp_header_size(response),
         }
+        if response.content is not None:
+            data['bodySize'] = len(response.content) - \
+                               data['content'].get('compression', 0)
+        else:
+            data['bodySize'] = -1
+        data.update(self._response_props)
+        data['content'].update(self._content_props)
+        return data
+
+    def _get_req_header_size(self, request: Request, url: Url, http_version: str) -> \
+            int:
+        endpoint = url.path
+        if len(url.query) > 0:
+            endpoint += f"?{url.query}"
+        if isinstance(http_version, int):
+            http_version = f"HTTP/{http_version / 10.0}".strip('.0')
+        header_size = len(f"{request.method} {endpoint} {http_version}.\n")
+        for key, value in request.headers.items():
+            header_size += len(f"{key}: {value}\n")
+        header_size += 2  # 2 CRLF
+        return header_size
 
     @staticmethod
-    def _get_content(response) -> dict:
+    def _get_resp_header_size(response: Response) -> int:
+        url = parse_url(response.url)
+        http_version = response.raw.version
+        endpoint = url.path
+        if url.query is not None and len(url.query) > 0:
+            endpoint += f"?{url.query}"
+        if isinstance(http_version, int):
+            http_version = f"HTTP/{http_version / 10.0}".strip('.0')
+        header_size = len(f"{http_version} {response.status_code} {response.reason}\n")
+        for key, value in response.headers.items():
+            header_size += len(f"{key}: {value}\n")
+        header_size += 2  # 2 CRLF
+        return header_size
+
+    @staticmethod
+    def _get_content(response: Response, comment: str = None) \
+            -> dict:
         data = {
-            'size': len(response.content) if response.content is not None else -1,
-            'mimeType': response.headers.get('Content-Type', '')
+            'size': len(response.content) if response.content is not None else -1
         }
+        compression = getattr(response.raw, 'compression', None)
+        if compression is not None:
+            data['compression'] = compression
+        data['mimeType'] = response.headers.get('Content-Type', '')
         if response.content is not None:
             try:
                 data['text'] = response.content.decode()
@@ -613,6 +848,8 @@ class Entry(JsonObject):
                 data['encoding'] = 'base64'
         else:
             data['text'] = ''
+        if comment is not None:
+            data['comment'] = comment
         return data
 
     @staticmethod
@@ -664,6 +901,7 @@ class Log(JsonObject):
             pages: list[Page] = None,
             comment: str = None,
     ):
+        super().__init__()
         self.version = version
         self.creator = creator
         self.entries = entries
@@ -683,7 +921,7 @@ class Log(JsonObject):
             entries=list(
                 map(Entry.from_dict, data.get('entries', []), repeat(adapter))),
             comment=data.get('comment')
-        )
+        )._setup_custom_properties(data)
 
     def to_dict(self) -> dict:
         data = {
@@ -697,6 +935,7 @@ class Log(JsonObject):
         data['entries'] = list(map(Entry.to_dict, self.entries))
         if self.comment is not None:
             data['comment'] = self.comment
+        data.update(self.custom_properties)
         return data
 
     def __str__(self):
@@ -715,18 +954,21 @@ class Har(JsonObject):
             self,
             log: Log
     ):
+        super().__init__()
         self.log = log
 
     @classmethod
     def from_dict(cls, data: dict, adapter: HTTPAdapter = None) -> 'Har':
         return cls(
             log=Log.from_dict(data['log'], adapter)
-        )
+        )._setup_custom_properties(data)
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             'log': self.log.to_dict()
         }
+        data.update(self.custom_properties)
+        return data
 
     def __str__(self) -> str:
         return f"HAR: {self.log}"
@@ -750,7 +992,7 @@ class HarFile:
         self._adapter = adapter
         try:
             self.load(json.load(self._fp))
-        except JSONDecodeError:
+        except JSONDecodeError as e:
             self._har = self._defaults()
 
     def load(self, data: dict):
@@ -783,18 +1025,19 @@ class HarFile:
             )
         )
 
-    def save(self, fp: TextIO = None):
+    def save(self, fp: TextIO = None, **kwargs):
         """
         Saves HAR to file
 
         :param fp: The file.
         :type fp: TextIO
+        :param kwargs: Args to be passed to json.dump
         :return:
         """
         if fp is None:
             fp = self._fp
         fp.seek(0)
-        json.dump(self._har.to_dict(), fp, indent='\t')
+        json.dump(self._har.to_dict(), fp, **kwargs)
         fp.truncate()
 
     def __enter__(self):

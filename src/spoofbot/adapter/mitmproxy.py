@@ -1,19 +1,26 @@
 """Provides functionality to inject HAR files as basis for a session to run on"""
+import os
+from typing import Union
 
 from loguru import logger
 from requests import PreparedRequest, Session, Response
-from requests.adapters import HTTPAdapter
 from requests.cookies import extract_cookies_to_jar
 from requests.structures import CaseInsensitiveDict
 from requests.utils import get_encoding_from_headers
 from urllib3.util import Url, parse_url
 
+from spoofbot.adapter.cache import CacheAdapter
 from spoofbot.util import cookie_header_to_dict, TimelessRequestsCookieJar
 from spoofbot.util.archive import do_keys_match, are_dicts_same, print_diff
 
 
-class ArchiveCache(HTTPAdapter):
-    """An adapter to be registered in a Session."""
+class MitmProxyCache(CacheAdapter):
+    """
+    MITMProxy flows cache adapter.
+
+    This HTTPAdapter provides an interface to a flows (MITMProxy flows) file. It can
+    read flows files and can be used to find stored responses to corresponding requests.
+    """
     _entries: dict[Url, list[tuple[PreparedRequest, Response]]]
     _match_header_order: bool
     _match_headers: bool
@@ -23,44 +30,50 @@ class ArchiveCache(HTTPAdapter):
 
     def __init__(
             self,
-            entries: dict[Url, list[tuple[PreparedRequest, Response]]],
-            match_header_order: bool = True,
+            cache_path: Union[str, os.PathLike],
+            is_active: bool = True,
+            is_offline: bool = False,
+            is_passive: bool = True,
+            delete_after_hit: bool = False,
+            mode: str = 'r',
             match_headers: bool = True,
-            match_data: bool = True,
-            delete_after_matching: bool = True,
-            session: Session = None,
-            **kwargs
+            match_header_order: bool = False,
+            match_data: bool = True
     ):
-        """Creates a new recording-file-based cache
-
-        :param entries: The prepared recordings
-        :type entries: dict[Url, list[tuple[PreparedRequest, Response]]]
-        :param match_header_order: Whether to require the order of the headers to match
-            when looking for hits
-        :type match_header_order: bool
-        :param match_headers: Whether to require the headers to match when looking for
-            hits
-        :type match_headers: bool
-        :param match_data: Whether to require the request data to match when looking for
-            hits
-        :type match_data: bool
-        :param delete_after_matching: Whether to delete hits from the cache once hit
-        :type delete_after_matching: bool
-        :param session: The session to use when building responses
-        :type session: Session
-        :param kwargs:
-        :type kwargs:
         """
-        super(ArchiveCache, self).__init__(**kwargs)
-        self._entries = entries
+        Creates a cache HTTP adapter that is based on an flows file.
+
+        :param cache_path: The path to the flows file
+        :type cache_path: Union[str, os.PathLike]
+        :param is_active: Whether the cache should be checked for hits. Default: True
+        :type is_active: bool
+        :param is_offline: Whether to block outgoing HTTP requests. Default: False
+        :type is_offline: bool
+        :param is_passive: Whether to store responses in the cache. Default: True
+        :type is_passive: bool
+        :param delete_after_hit: Whether to delete responses from the cache. Default:
+            False
+        :type delete_after_hit: bool
+        :param mode: In what mode the HAR file should be opened. Default: r
+        :type mode: str
+        :param match_headers: Whether to check for headers to match. Default: True
+        :type match_headers: bool
+        :param match_header_order: Whether to check for the header order to match:
+        Default: False
+        :type match_header_order: bool
+        :param match_data: Whether to check for the request body to match. Default: True
+        """
+        super(MitmProxyCache, self).__init__(
+            cache_path=cache_path,
+            is_active=is_active,
+            is_offline=is_offline,
+            is_passive=is_passive,
+            delete_after_hit=delete_after_hit,
+        )
+        self._mode = mode
         self._match_header_order = match_header_order
         self._match_headers = match_headers
         self._match_data = match_data
-        self._delete_after_matching = delete_after_matching
-        if session is None:
-            session = Session()
-            session.headers.clear()
-        self._session = session
 
     @property
     def entries(self) -> dict[Url, list[tuple[PreparedRequest, Response]]]:
@@ -90,22 +103,6 @@ class ArchiveCache(HTTPAdapter):
     def match_data(self, value: bool):
         self._match_data = value
 
-    @property
-    def delete_after_matching(self) -> bool:
-        return self._delete_after_matching
-
-    @delete_after_matching.setter
-    def delete_after_matching(self, value: bool):
-        self._delete_after_matching = value
-
-    @property
-    def session(self) -> Session:
-        return self._session
-
-    @session.setter
-    def session(self, value: Session):
-        self._session = value
-
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True,
              cert=None, proxies=None):
         indent = ' ' * len(request.method)
@@ -114,8 +111,8 @@ class ArchiveCache(HTTPAdapter):
             if self._match_requests(request, cached_request):
                 logger.debug(f"{indent}Request matched")
                 if self._delete_after_matching:
-                    del possible_requests[
-                        i]  # Delete entry as we already matched it once.
+                    # Delete entry as we already matched it once.
+                    del possible_requests[i]
                     logger.debug(f"{indent}Deleted matched request and response")
                 return self.build_response(request, cached_response)
         raise Exception(f"No matching entry found for {request.url}")

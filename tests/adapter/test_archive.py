@@ -3,25 +3,25 @@ from pathlib import Path
 
 from requests import Session
 
-from spoofbot.adapter import ArchiveCache
-from spoofbot.util import load_har, load_flows
+from spoofbot.adapter import MitmProxyCache, HarCache
+from spoofbot.util import load_flows
 
 p = Path(__file__).parent.parent.parent
 
 
 class HarProxyTest(unittest.TestCase):
     session: Session = None
-    adapter: ArchiveCache = None
+    adapter: HarCache = None
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.adapter = ArchiveCache(
-            load_har(p / 'test_data/www.wuxiaworld.com_Archive_ALL.har'),
+        cls.adapter = HarCache(
+            p / 'test_data/www.wuxiaworld.com_Archive_ALL.har',
             match_headers=False,
             match_header_order=False,
             match_data=False,
         )
-        cls.session = cls.adapter.session
+        cls.session = Session()
         cls.session.mount('http://', cls.adapter)
         cls.session.mount('https://', cls.adapter)
 
@@ -65,11 +65,11 @@ class HarProxyTest(unittest.TestCase):
 
 class MITMProxyTest(unittest.TestCase):
     session: Session = None
-    adapter: ArchiveCache = None
+    adapter: MitmProxyCache = None
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.adapter = ArchiveCache(
+        cls.adapter = MitmProxyCache(
             load_flows(p / 'test_data/www.wuxiaworld.com_mitmproxy.flows'),
             match_headers=False,
             match_header_order=False,

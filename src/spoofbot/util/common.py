@@ -6,7 +6,7 @@ from http.cookiejar import split_header_words, _warn_unhandled_exception, \
     parse_ns_headers, _debug, CookieJar, \
     CookiePolicy
 from typing import List, Tuple, Dict, Union
-from urllib.parse import quote_plus, urlparse, unquote
+from urllib.parse import quote_plus, urlparse
 
 from requests.cookies import RequestsCookieJar
 from requests.structures import CaseInsensitiveDict
@@ -102,7 +102,7 @@ def query_to_dict_list(query: str) -> list[dict[str, str]]:
             k, v = kvp, ''
         queries.append({
             'name': k,
-            'value': unquote(v)
+            'value': v
         })
     return queries
 
