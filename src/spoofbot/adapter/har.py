@@ -1,9 +1,11 @@
 import os
 from datetime import datetime, timedelta
+from socket import socket
 from typing import Optional, Union
 
 from loguru import logger
 from requests import Response, PreparedRequest, Session
+from urllib3.connection import HTTPConnection
 from urllib3.util import Url
 
 from spoofbot.adapter.cache import CacheAdapter
@@ -89,6 +91,30 @@ class HarCache(CacheAdapter):
     @property
     def har(self) -> Har:
         return self._har
+
+    @property
+    def match_headers(self) -> bool:
+        return self._match_headers
+
+    @match_headers.setter
+    def match_headers(self, value: bool):
+        self._match_headers = value
+
+    @property
+    def match_header_order(self) -> bool:
+        return self._match_header_order
+
+    @match_header_order.setter
+    def match_header_order(self, value: bool):
+        self._match_header_order = value
+
+    @property
+    def match_data(self) -> bool:
+        return self._match_data
+
+    @match_data.setter
+    def match_data(self, value: bool):
+        self._match_data = value
 
     def __enter__(self):
         self._har_file.__enter__()
@@ -183,9 +209,10 @@ class HarCache(CacheAdapter):
 
     def _store_response(self, response: Response):
         ip, port = None, None
-        conn = getattr(response.raw, '_connection', None)
+        conn: HTTPConnection = getattr(response.raw, '_connection', None)
         if conn is not None and not getattr(conn.sock, '_closed'):
-            ip, port = conn.sock.getpeername()
+            sock: socket = conn.sock
+            ip, port = sock.getpeername()
             port = str(port)
             conn.sock.close()
             setattr(response.raw, '_connection', None)
