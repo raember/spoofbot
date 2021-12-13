@@ -86,7 +86,7 @@ def cookie_header_to_dict(cookie: str, sep: str = '; ', eq: str = '=') -> \
     d = {}
     for tag in cookie.split(sep):
         if eq in tag:
-            k, v = tag.split(eq)
+            k, v = tag.split(eq, 1)
             d[k] = v
         else:
             d[tag] = None
