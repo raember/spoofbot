@@ -410,7 +410,9 @@ class Browser(Session):
         responses = [response]
         bs = BeautifulSoup(response.content, features='html.parser')
         url = parse_url(response.url)
-        links = self._gather_valid_links(bs, url) + self._gather_valid_scripts(bs, url)
+        links = self._gather_valid_links(bs, url) + \
+                self._gather_valid_scripts(bs, url) + \
+                self._gather_valid_imgs(bs, url)
         for link in links:
             logger.debug(f"Fetching {link.url}")
             try:
@@ -432,7 +434,7 @@ class Browser(Session):
                     ignore |= True
                 elif rel in {'canonical'}:
                     ignore |= True
-                elif rel in {'manifest', 'mask-icon', 'shortcut'}:
+                elif rel in {'manifest', 'mask-icon'}:
                     # non-standard and unsupported
                     ignore |= True
             if ignore:
@@ -449,6 +451,20 @@ class Browser(Session):
     def _gather_valid_scripts(bs: BeautifulSoup, origin: Url) -> list[Url]:
         scripts = []
         for script in bs.find_all('script'):
+            if 'src' not in script.attrs:
+                continue
+            src: str = script.get('src', None)
+            if src is None:
+                continue
+            if src.startswith('/'):
+                src = f"{origin.scheme}://{origin.hostname}{src}"
+            scripts.append(parse_url(src))
+        return scripts
+
+    @staticmethod
+    def _gather_valid_imgs(bs: BeautifulSoup, origin: Url) -> list[Url]:
+        scripts = []
+        for script in bs.find_all('img'):
             if 'src' not in script.attrs:
                 continue
             src: str = script.get('src', None)
