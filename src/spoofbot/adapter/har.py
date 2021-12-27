@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from socket import socket
+from ssl import SSLSocket
 from typing import Optional, Union
 
 from loguru import logger
@@ -210,13 +211,18 @@ class HarCache(CacheAdapter):
     def _store_response(self, response: Response):
         ip, port = None, None
         conn: HTTPConnection = getattr(response.raw, '_connection', None)
+        cert: dict = None
         if conn is not None and not getattr(conn.sock, '_closed'):
             sock: socket = conn.sock
+            if isinstance(sock, SSLSocket):
+                cert = sock.getpeercert()
+                setattr(response, 'cert', cert)
             ip, port = sock.getpeername()
             port = str(port)
             conn.sock.close()
             setattr(response.raw, '_connection', None)
-        self._har.log.entries.append(Entry(
+        setattr(response, 'date', self._started_timestamp)
+        entry = Entry(
             started_datetime=self._started_timestamp,
             time=response.elapsed,
             request=response.request,
@@ -233,7 +239,10 @@ class HarCache(CacheAdapter):
             server_ip_address=ip,
             connection=port,
             comment=None
-        ))
+        )
+        if cert is not None:
+            entry.custom_properties['_cert'] = cert
+        self._har.log.entries.append(entry)
         self._expect_new_entry = True
 
     def _delete(self, response: Response):

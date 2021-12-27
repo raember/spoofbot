@@ -21,11 +21,13 @@ from requests.utils import requote_uri, rewind_body, get_netrc_auth
 from urllib3.util.url import parse_url, Url
 
 from spoofbot.adapter import FileCache
-from spoofbot.operating_system import Windows
+from spoofbot.operating_system import Windows, WindowsVersion, MacOSX, MacOSXVersion, Linux, LinuxDerivatives, \
+    random_os, OS
 from spoofbot.tag import MimeTypeTag, LanguageTag
 from spoofbot.util import ReferrerPolicy, are_same_origin, are_same_site, sort_dict, \
-    TimelessRequestsCookieJar
+    TimelessRequestsCookieJar, random_version, get_firefox_versions, get_chrome_versions
 from spoofbot.util.log import log_request, log_response
+from numpy.random import choice, poisson
 
 
 class Destination(Enum):
@@ -291,6 +293,15 @@ class Browser(Session):
 
         :param kwargs: Specific arguments to take into account.
         :returns: A custom user agent string.
+        :rtype: str
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def create_random_user_agent() -> str:
+        """Creates seemingly random user agent string
+
+        :returns: A random user agent string.
         :rtype: str
         """
         raise NotImplementedError
@@ -879,7 +890,7 @@ class Firefox(Browser):
         ]
 
     @staticmethod
-    def create_user_agent(os=Windows(), version=FF_NEWEST, build_id=20100101) -> str:
+    def create_user_agent(os: OS = Windows(), version: tuple[int, ...] = FF_NEWEST, build_id: int = 20100101) -> str:
         """Creates a user agent string for Firefox
 
         :param os: The underlying operating system (default :py:class:`Windows`).
@@ -891,6 +902,12 @@ class Firefox(Browser):
         return f"Mozilla/5.0 ({os}; rv:{ff_version}) " \
                f"Gecko/{build_id} " \
                f"Firefox/{ff_version}"
+
+    @staticmethod
+    def create_random_user_agent() -> str:
+        os = random_os()
+        ff_version = random_version(get_firefox_versions())
+        return Firefox.create_user_agent(os, ff_version)
 
 
 CHROME_NEWEST = (92, 0, 4495, 0)
@@ -963,13 +980,19 @@ class Chrome(Browser):
                f"Chrome/{'.'.join(map(str, version))} " \
                f"Safari/{webkit_ver}"
 
+    @staticmethod
+    def create_random_user_agent() -> str:
+        os = random_os()
+        chrome_version = random_version(get_chrome_versions())
+        return Firefox.create_user_agent(os, chrome_version)
+
     def navigate(self, url: str, **kwargs) -> Response:
         if parse_url(url).scheme == 'https':
             kwargs.setdefault('headers', {}).setdefault('Sec-Fetch-User', '?1')
             kwargs.setdefault('headers', {}).setdefault('Sec-Fetch-Mode', 'navigate')
-        response = self.get(url, **kwargs)
-        self._last_navigate = response
-        return response
+        responses = super(Chrome, self).navigate(url, **kwargs)
+        self._last_navigate = responses[0]
+        return responses
 
     def _get_default_headers(self, method: str, url: Url,
                              user_activation: bool) -> CaseInsensitiveDict:

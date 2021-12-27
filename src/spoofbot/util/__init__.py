@@ -15,3 +15,4 @@ from .http import are_same_origin, are_same_origin_domain, are_schemelessly_same
 from .http import is_ip, is_domain
 from .http import opaque_origin, origin_tuple, OriginTuple
 from .http import sort_dict
+from .versions import get_latest, get_firefox_versions, get_chrome_versions, get_versions_since, random_version
