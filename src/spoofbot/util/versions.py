@@ -44,7 +44,7 @@ def get_firefox_versions(update_after: timedelta = timedelta(days=1)) -> dict[da
         data = requests.get('https://product-details.mozilla.org/1.0/firefox.json').json()
         for _, value in sorted(data.get('releases', {}).items(), key=lambda kvp: parse(kvp[1]['date']), reverse=True):
             ver = value['version']
-            if value['category'] == 'major':
+            if value['category'] in ['major', 'stability']:
                 versions[parse(value['date'])] = tuple(map(int, ver.split('.')))
         with open(cache, 'w') as fp:
             json.dump({str(k): v for (k, v) in versions.items()}, fp)
