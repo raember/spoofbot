@@ -765,15 +765,25 @@ class Entry(JsonObject):
         if self.request.method.upper() == 'POST':
             mimetype = self.request.headers.get('Content-Type', '')
             params = []
-            if mimetype == 'application/x-www-form-urlencoded':
-                params = query_to_dict_list(self.request.body)
             if self.request.body is not None:
+                body = self.request.body
+                encoding = None
+                if isinstance(body, bytes):
+                    try:
+                        body = body.decode()
+                    except UnicodeDecodeError:
+                        body = base64.b64encode(body).decode()
+                        encoding = 'base64'
+                if mimetype == 'application/x-www-form-urlencoded':
+                    params = query_to_dict_list(body)
                 data['postData'] = {
                     'mimeType': mimetype,
                     'params': params,
-                    'text': self.request.body
+                    'text': body
                 }
-                data['bodySize'] = len(self.request.body)
+                if encoding is not None:
+                    data['postData']['encoding'] = encoding
+                data['bodySize'] = len(body)
                 data['postData'].update(self._post_data_props)
         data.update(self._request_props)
         return data
@@ -980,8 +990,7 @@ class HarFile:
     _mode: str
     _adapter: HTTPAdapter
 
-    def __init__(self, file: Union[str, os.PathLike], adapter: HTTPAdapter,
-                 mode: str = 'r'):
+    def __init__(self, file: Union[str, os.PathLike], mode: str = 'r', adapter: HTTPAdapter = None):
         if not isinstance(file, Path):
             file = Path(file)
         if not file.exists():
@@ -1049,3 +1058,7 @@ class HarFile:
     @property
     def har(self) -> Har:
         return self._har
+
+    @har.setter
+    def har(self, value: Har):
+        self._har = value
