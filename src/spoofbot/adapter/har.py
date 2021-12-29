@@ -1,3 +1,4 @@
+import base64
 import os
 from datetime import datetime, timedelta
 from socket import socket
@@ -82,7 +83,7 @@ class HarCache(CacheAdapter):
         self._entry_idx = -1
         self._expect_new_entry = False
         self._cache_path.parent.mkdir(parents=True, exist_ok=True)
-        self._har_file = HarFile(self._cache_path, self, self._mode)
+        self._har_file = HarFile(self._cache_path, mode=self._mode, adapter=self)
         self._har = self._har_file.har
 
     @property
@@ -212,11 +213,14 @@ class HarCache(CacheAdapter):
         ip, port = None, None
         conn: HTTPConnection = getattr(response.raw, '_connection', None)
         cert: dict = None
+        cert_bin: bytes = None
         if conn is not None and not getattr(conn.sock, '_closed'):
             sock: socket = conn.sock
             if isinstance(sock, SSLSocket):
                 cert = sock.getpeercert()
                 setattr(response, 'cert', cert)
+                cert_bin = sock.getpeercert(binary_form=True)
+                setattr(response, 'cert_bin', cert_bin)
             ip, port = sock.getpeername()
             port = str(port)
             conn.sock.close()
@@ -242,6 +246,8 @@ class HarCache(CacheAdapter):
         )
         if cert is not None:
             entry.custom_properties['_cert'] = cert
+        if cert_bin is not None:
+            entry.custom_properties['_cert_bin'] = base64.b64encode(cert_bin).decode()
         self._har.log.entries.append(entry)
         self._expect_new_entry = True
 
