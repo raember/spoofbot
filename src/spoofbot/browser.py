@@ -964,7 +964,7 @@ class Chrome(Browser):
         ]
 
     @staticmethod
-    def create_user_agent(os=Windows(), version=CHROME_NEWEST,
+    def create_user_agent(os: OS = Windows(), version=CHROME_NEWEST,
                           webkit_version=WEBKIT_NEWEST) -> str:
         """Creates a user agent string for Firefox
 
@@ -984,7 +984,7 @@ class Chrome(Browser):
     def create_random_user_agent() -> str:
         os = random_os()
         chrome_version = random_version(get_chrome_versions())
-        return Firefox.create_user_agent(os, chrome_version)
+        return Chrome.create_user_agent(os, chrome_version)
 
     def navigate(self, url: str, **kwargs) -> Response:
         if parse_url(url).scheme == 'https':
