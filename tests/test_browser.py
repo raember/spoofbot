@@ -11,7 +11,8 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 from requests import Response
 
-from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux
+from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux, \
+    MacOSXVersion, WindowsVersion
 from spoofbot.adapter import HarCache
 from spoofbot.util import encode_form_data, TimelessRequestsCookieJar
 
@@ -751,13 +752,13 @@ class FirefoxUserAgentTest(unittest.TestCase):
     def test_win(self):
         self.assertEqual(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20100101 Firefox/71.0',
-            Firefox.create_user_agent(Windows(), version=(71, 0))
+            Firefox.create_user_agent(Windows(WindowsVersion.Win11), version=(71, 0))
         )
 
     def test_mac(self):
         self.assertEqual(
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15; rv:71.0) Gecko/20100101 Firefox/71.0',
-            Firefox.create_user_agent(MacOSX(), version=(71, 0))
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 12; rv:71.0) Gecko/20100101 Firefox/71.0',
+            Firefox.create_user_agent(MacOSX(MacOSXVersion.Monterey), version=(71, 0))
         )
 
     def test_linux(self):
@@ -789,13 +790,16 @@ class ChromeUserAgentTest(unittest.TestCase):
     def test_win(self):
         self.assertEqual(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36',
-            Chrome.create_user_agent(Windows(), version=(79, 0, 3945, 130))
+            Chrome.create_user_agent(Windows(WindowsVersion.Win11),
+                                     version=(79, 0, 3945, 130))
         )
 
     def test_mac(self):
         self.assertEqual(
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36',
-            Chrome.create_user_agent(MacOSX(), version=(79, 0, 3945, 130))
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 12) AppleWebKit/537.36 (KHTML, '
+            'like Gecko) Chrome/79.0.3945.130 Safari/537.36',
+            Chrome.create_user_agent(MacOSX(MacOSXVersion.Monterey),
+                                     version=(79, 0, 3945, 130))
         )
 
     def test_linux(self):

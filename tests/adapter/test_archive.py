@@ -21,26 +21,30 @@ class HarProxyTest(unittest.TestCase):
             match_header_order=False,
             match_data=False,
         )
+        cls.adapter.is_offline = True
         cls.session = Session()
         cls.session.mount('http://', cls.adapter)
         cls.session.mount('https://', cls.adapter)
 
     def test_hit(self):
-        self.adapter.delete_after_matching = False
+        self.adapter.delete_after_hit = False
         self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com/novels"))
         self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com/novels"))
 
     def test_delete(self):
-        self.adapter.delete_after_matching = True
-        self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com/profile/karma"))
+        self.assertIsNotNone(
+            self.session.get("https://www.wuxiaworld.com/profile/karma"))
+        self.adapter.delete_after_hit = True
+        self.assertIsNotNone(
+            self.session.get("https://www.wuxiaworld.com/profile/karma"))
         with self.assertRaises(Exception):
             self.session.get("https://www.wuxiaworld.com/profile/karma")
 
     def test_strict(self):
         self.adapter.match_headers = True
-        self.adapter.match_header_order = True
+        self.adapter.match_header_order = False
         self.adapter.match_data = True
-        self.adapter.delete_after_matching = True
+        self.adapter.delete_after_hit = True
         self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com/", headers={
             'Host': 'www.wuxiaworld.com',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20100101 Firefox/71.0',
@@ -80,12 +84,12 @@ class MITMProxyTest(unittest.TestCase):
         cls.session.mount('https://', cls.adapter)
 
     def test_hit(self):
-        self.adapter.delete_after_matching = False
+        self.adapter.delete_after_hit = False
         self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com"))
         self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com"))
 
     def test_delete(self):
-        self.adapter.delete_after_matching = True
+        self.adapter.delete_after_hit = True
         self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com/novels"))
         with self.assertRaises(Exception):
             self.session.get("https://www.wuxiaworld.com/novels")
@@ -94,7 +98,7 @@ class MITMProxyTest(unittest.TestCase):
         self.adapter.match_headers = True
         self.adapter.match_header_order = True
         self.adapter.match_data = True
-        self.adapter.delete_after_matching = False
+        self.adapter.delete_after_hit = False
         self.assertIsNotNone(self.session.get("https://www.wuxiaworld.com/", headers={
             # 'Host': 'www.wuxiaworld.com',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:90.0) Gecko/20100101 Firefox/90.0',

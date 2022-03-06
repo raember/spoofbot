@@ -259,3 +259,4 @@ class HarCache(CacheAdapter):
         else:
             del self._har.log.entries[self._entry_idx]
             self._entry_idx = -1
+            logger.debug("Removed response from cache")
