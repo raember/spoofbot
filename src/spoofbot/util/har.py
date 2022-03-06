@@ -12,6 +12,7 @@ from typing import Union, TextIO
 from urllib import request
 from urllib.parse import urlparse
 
+from cryptography import x509
 from dateutil.parser import parse
 # https://w3c.github.io/web-performance/specs/HAR/Overview.html
 from requests import PreparedRequest, Response
@@ -646,6 +647,16 @@ class Entry(JsonObject):
         resp: Response = adapter.build_response(preq, hresp)
         resp.elapsed = timedelta(milliseconds=data['time'])
         resp.reason = data['response']['statusText']
+        if '_cert' in data.keys():
+            setattr(resp, 'cert', data['_cert'])
+        if '_cert_bin' in data.keys():
+            cert_bin = base64.b64decode(data['_cert_bin'])
+            setattr(resp, 'cert_bin', cert_bin)
+            setattr(resp, 'cert_x509', x509.load_der_x509_certificate(cert_bin))
+        if '_ip' in data.keys():
+            setattr(resp, 'ip', data['_ip'])
+        if '_port' in data.keys():
+            setattr(resp, 'port', int(data['_port']))
         return cls(
             page_ref=data.get('pageref', None),
             started_datetime=parse(data['startedDateTime']),

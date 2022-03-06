@@ -3,39 +3,32 @@ import os
 from typing import Union
 
 from loguru import logger
-from requests import PreparedRequest, Session, Response
+from requests import PreparedRequest, Response
 from requests.cookies import extract_cookies_to_jar
 from requests.structures import CaseInsensitiveDict
 from requests.utils import get_encoding_from_headers
-from urllib3.util import Url, parse_url
+from urllib3.util import parse_url
 
-from spoofbot.adapter.cache import CacheAdapter
-from spoofbot.util import cookie_header_to_dict, TimelessRequestsCookieJar
-from spoofbot.util.archive import do_keys_match, are_dicts_same, print_diff
+from spoofbot.adapter.cache import MemoryCacheAdapter
+from spoofbot.util import TimelessRequestsCookieJar
 
 
-class MitmProxyCache(CacheAdapter):
+class MitmProxyCache(MemoryCacheAdapter):
     """
     MITMProxy flows cache adapter.
 
     This HTTPAdapter provides an interface to a flows (MITMProxy flows) file. It can
     read flows files and can be used to find stored responses to corresponding requests.
     """
-    _entries: dict[Url, list[tuple[PreparedRequest, Response]]]
-    _match_header_order: bool
-    _match_headers: bool
-    _match_data: bool
-    _delete_after_matching: bool
-    _session: Session
 
     def __init__(
             self,
             cache_path: Union[str, os.PathLike],
+            mode: str = 'r',
             is_active: bool = True,
             is_offline: bool = False,
             is_passive: bool = True,
             delete_after_hit: bool = False,
-            mode: str = 'r',
             match_headers: bool = True,
             match_header_order: bool = False,
             match_data: bool = True
@@ -45,6 +38,8 @@ class MitmProxyCache(CacheAdapter):
 
         :param cache_path: The path to the flows file
         :type cache_path: Union[str, os.PathLike]
+        :param mode: In what mode the HAR file should be opened. Default: r
+        :type mode: str
         :param is_active: Whether the cache should be checked for hits. Default: True
         :type is_active: bool
         :param is_offline: Whether to block outgoing HTTP requests. Default: False
@@ -54,8 +49,6 @@ class MitmProxyCache(CacheAdapter):
         :param delete_after_hit: Whether to delete responses from the cache. Default:
             False
         :type delete_after_hit: bool
-        :param mode: In what mode the HAR file should be opened. Default: r
-        :type mode: str
         :param match_headers: Whether to check for headers to match. Default: True
         :type match_headers: bool
         :param match_header_order: Whether to check for the header order to match:
@@ -69,39 +62,11 @@ class MitmProxyCache(CacheAdapter):
             is_offline=is_offline,
             is_passive=is_passive,
             delete_after_hit=delete_after_hit,
+            match_headers=match_headers,
+            match_header_order=match_header_order,
+            match_data=match_data
         )
         self._mode = mode
-        self._match_header_order = match_header_order
-        self._match_headers = match_headers
-        self._match_data = match_data
-
-    @property
-    def entries(self) -> dict[Url, list[tuple[PreparedRequest, Response]]]:
-        return self._entries
-
-    @property
-    def match_header_order(self) -> bool:
-        return self._match_header_order
-
-    @match_header_order.setter
-    def match_header_order(self, value: bool):
-        self._match_header_order = value
-
-    @property
-    def match_headers(self) -> bool:
-        return self._match_headers
-
-    @match_headers.setter
-    def match_headers(self, value: bool):
-        self._match_headers = value
-
-    @property
-    def match_data(self) -> bool:
-        return self._match_data
-
-    @match_data.setter
-    def match_data(self, value: bool):
-        self._match_data = value
 
     def send(self, request: PreparedRequest, stream=False, timeout=None, verify=True,
              cert=None, proxies=None):
@@ -117,36 +82,6 @@ class MitmProxyCache(CacheAdapter):
                 return self.build_response(request, cached_response)
         raise Exception(f"No matching entry found for {request.url}")
 
-    def _match_requests(self, request: PreparedRequest,
-                        cached_request: PreparedRequest) -> bool:
-        indent_level = len(request.method)
-        indent = ' ' * indent_level
-        if cached_request.method == request.method and \
-                cached_request.url == request.url:
-            success = True
-            if self._match_header_order:
-                success &= do_keys_match(request.headers, cached_request.headers,
-                                         indent_level)
-            if self._match_headers:
-                success &= are_dicts_same(request.headers, cached_request.headers,
-                                          indent_level, 'headers')
-                if 'Cookie' in cached_request.headers or 'Cookie' in request.headers:
-                    request_cookies = cookie_header_to_dict(
-                        request.headers.get('Cookie', ''))
-                    cached_cookies = cookie_header_to_dict(
-                        cached_request.headers.get('Cookie', ''))
-                    success &= are_dicts_same(request_cookies, cached_cookies,
-                                              indent_level + 2, 'cookies')
-            if self._match_data and cached_request.body:
-                if cached_request.body != request.body:
-                    success = False
-                    print_diff('data', cached_request.body, request.body, indent_level)
-            if not success:
-                logger.debug(
-                    indent + '=' * 16)  # To easily distinguish multiple tested requests
-            return success
-        return False
-
     def build_response(self, req, resp):
         """Builds a :class:`Response <requests.Response>` object from a urllib3
         response. This should not be called from user code, and is only exposed
@@ -160,10 +95,10 @@ class MitmProxyCache(CacheAdapter):
         """
         response = Response()
 
-        cookie_jar = self.session.cookies
+        cookie_jar = self._session.cookies
         if isinstance(cookie_jar, TimelessRequestsCookieJar) \
-                and isinstance(self.session.cookies, TimelessRequestsCookieJar):
-            cookie_jar.mock_date = self.session.cookies.mock_date
+                and isinstance(self._session.cookies, TimelessRequestsCookieJar):
+            cookie_jar.mock_date = self._session.cookies.mock_date
 
         response.cookies = cookie_jar
 

@@ -17,7 +17,7 @@ print(spec['info']['description'])
 headers = browser.navigate(
     'https://httpbin.org/headers',
     headers={'Accept': 'mime/type'}
-).json()
+)[0].json()
 print(headers['headers']['Accept'])
 # mime/type
 ```
@@ -51,10 +51,14 @@ Using `FileCache`, one can store responses (without metadata such as headers or 
 property. This is also supported when deleting the last request from the cache. By using the `backup` method, the cache will backup the subsequent requests' original cached responses inside a new `Backup` object. If it is then determined that the backup should be restored, the `restore_all`/`restore` methods can be used. The backup process can be stopped explicitly with `stop_backup` or by using a `with` block on the
 backup object.
 
-### Archive Cache
+### HAR Cache
 
-Using `ArchiveCache`, one is able to load `.har` and [MITMProxy](https://mitmproxy.org/) flow files to use as cache. This cache does not make actual HTTP requests to the net, but fails if no matching request could be found. It can be specified whether matching a request should be strict (must match all headers) or not. When matching for requests, one can toggle rules to use (such as matching headers, header order or
-post data) when looking for a match using the adapter's properties.
+Using `HarCache`, one is able to load `.har` and [MITMProxy](https://mitmproxy.org/)
+flow files to use as cache. This cache does not make actual HTTP requests to the net,
+but fails if no matching request could be found. It can be specified whether matching a
+request should be strict (must match all headers) or not. When matching for requests,
+one can toggle rules to use (such as matching headers, header order or post data) when
+looking for a match using the adapter's properties.
 
 ## Example usage
 

@@ -21,13 +21,11 @@ from requests.utils import requote_uri, rewind_body, get_netrc_auth
 from urllib3.util.url import parse_url, Url
 
 from spoofbot.adapter import FileCache
-from spoofbot.operating_system import Windows, WindowsVersion, MacOSX, MacOSXVersion, Linux, LinuxDerivatives, \
-    random_os, OS
+from spoofbot.operating_system import Windows, random_os, OS
 from spoofbot.tag import MimeTypeTag, LanguageTag
 from spoofbot.util import ReferrerPolicy, are_same_origin, are_same_site, sort_dict, \
     TimelessRequestsCookieJar, random_version, get_firefox_versions, get_chrome_versions
 from spoofbot.util.log import log_request, log_response
-from numpy.random import choice, poisson
 
 
 class Destination(Enum):
@@ -986,7 +984,7 @@ class Chrome(Browser):
         chrome_version = random_version(get_chrome_versions())
         return Chrome.create_user_agent(os, chrome_version)
 
-    def navigate(self, url: str, **kwargs) -> Response:
+    def navigate(self, url: str, **kwargs) -> List[Response]:
         if parse_url(url).scheme == 'https':
             kwargs.setdefault('headers', {}).setdefault('Sec-Fetch-User', '?1')
             kwargs.setdefault('headers', {}).setdefault('Sec-Fetch-Mode', 'navigate')
