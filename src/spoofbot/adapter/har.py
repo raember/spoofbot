@@ -146,23 +146,6 @@ class HarCache(MemoryCacheAdapter):
                 comment="Created with Spoofbot"
             )
 
-        # noinspection PyUnusedLocal
-        def resp_hook(response: Response, **kwargs):
-            # Only update the time if it was a new entry added to the list
-            if not self._expect_new_entry:
-                return response
-            self._expect_new_entry = False
-
-            last_entry = self._har.log.entries[-1]
-            if last_entry.response != response:
-                raise Exception("Hook got called on the wrong response")
-            last_entry.time = response.elapsed
-            last_entry.timings.wait = response.elapsed
-            return response
-
-        # noinspection PyTypeChecker
-        session.hooks['response'] = resp_hook
-
     def _store_response(self, response: Response):
         super(HarCache, self)._store_response(response)
         self._expect_new_entry = True
