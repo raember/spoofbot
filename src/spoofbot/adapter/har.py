@@ -1,14 +1,19 @@
 import base64
 import os
 from datetime import timedelta
+from io import BytesIO
 from pathlib import Path
-from typing import Union
+from typing import Union, Optional
 
 from cryptography.hazmat.primitives._serialization import Encoding
-from requests import Response, Session
+from requests import Response, Session, Request
+from requests.structures import CaseInsensitiveDict
+from urllib3 import HTTPResponse
 
 from spoofbot.adapter.cache import MemoryCacheAdapter
-from spoofbot.util import HarFile, Entry, Timings, Har, Browser
+from spoofbot.util import HarFile, Entry, Timings, Har, Browser, \
+    dict_list_to_tuple_list, dict_list_to_dict
+from spoofbot.util.file import MockHTTPResponse
 
 
 class HarCache(MemoryCacheAdapter):
@@ -149,3 +154,47 @@ class HarCache(MemoryCacheAdapter):
     def _store_response(self, response: Response):
         super(HarCache, self)._store_response(response)
         self._expect_new_entry = True
+
+
+def request_from_har_entry(entry: dict) -> tuple[Request, str]:
+    request_entry = entry['request']
+    data = {}
+    if 'postData' in request_entry:
+        post_data = dict_list_to_tuple_list(request_entry['postData']['params'],
+                                            case_insensitive=False)
+        data = '&'.join(map('='.join, post_data))
+        if len(data) == 0:
+            data = request_entry['postData']['text']
+    return Request(
+        method=request_entry['method'].upper(),
+        url=request_entry['url'],
+        headers=CaseInsensitiveDict(
+            dict_list_to_dict(request_entry['headers'], case_insensitive=True)),
+        data=data,
+        cookies=dict_list_to_dict(request_entry['cookies'])
+    ), request_entry['httpVersion'].upper()
+
+
+def response_from_har_entry(entry: dict) -> Optional[HTTPResponse]:
+    response_entry = entry['response']
+    if response_entry is None:
+        return None
+
+    headers = dict_list_to_tuple_list(response_entry['headers'])
+    content: dict = response_entry['content']
+    encoding = content.get('encoding', None)
+    if encoding == 'base64':
+        body = base64.b64decode(content.get('text', ''))
+    else:
+        body = content.get('text', '').encode('utf8')
+    resp = HTTPResponse(
+        body=BytesIO(body),
+        headers=headers,
+        status=response_entry['status'],
+        preload_content=False,
+        original_response=MockHTTPResponse(headers),
+        version=response_entry.get('version', 'HTTP/1.1')
+    )
+    # Hack to prevent already decoded contents to be decoded again
+    resp.CONTENT_DECODERS = []
+    return resp

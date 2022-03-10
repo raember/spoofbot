@@ -1,6 +1,5 @@
 """Utility module  for handy features to be used in conjunction with the core modules"""
 
-from .archive import load_flows
 from .common import TimelessRequestsCookieJar
 from .common import dict_to_dict_list, url_to_query_dict_list
 from .common import dict_to_tuple_list, dict_list_to_dict, dict_list_to_tuple_list, \

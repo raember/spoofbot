@@ -1,16 +1,21 @@
 """Provides functionality to inject HAR files as basis for a session to run on"""
 import os
-from typing import Union
+from io import BytesIO
+from typing import Union, Optional
 
 from loguru import logger
-from requests import PreparedRequest, Response
+from mitmproxy.http import HTTPFlow
+from mitmproxy.io import read_flows_from_paths
+from requests import PreparedRequest, Response, Session, Request
 from requests.cookies import extract_cookies_to_jar
 from requests.structures import CaseInsensitiveDict
 from requests.utils import get_encoding_from_headers
-from urllib3.util import parse_url
+from urllib3 import HTTPResponse
+from urllib3.util import parse_url, Url
 
 from spoofbot.adapter.cache import MemoryCacheAdapter
 from spoofbot.util import TimelessRequestsCookieJar
+from spoofbot.util.file import MockHTTPResponse
 
 
 class MitmProxyCache(MemoryCacheAdapter):
@@ -126,3 +131,56 @@ class MitmProxyCache(MemoryCacheAdapter):
         response.connection = self
 
         return response
+
+
+def load_flows(path: Union[str, os.PathLike], session: Session = None) \
+        -> dict[Url, list[tuple[PreparedRequest, Response]]]:
+    if session is None:
+        session = Session()
+        session.headers.clear()
+    data = {}
+    for flow in read_flows_from_paths([path]):
+        request: PreparedRequest = session.prepare_request(request_from_flow(flow))
+        response: HTTPResponse = response_from_flow(flow)
+        url = parse_url(request.url)
+        requests = data.get(url, [])
+        requests.append((request, response))
+        data[url] = requests
+    return data
+
+
+def request_from_flow(flow: HTTPFlow) -> Request:
+    req = flow.request
+    headers = CaseInsensitiveDict()
+    for header, value in req.headers.items():
+        headers[header] = value
+    cookies = {}
+    for cookie, value in req.cookies.items():
+        cookies[cookie] = value
+    return Request(
+        method=req.method.upper(),
+        url=req.url,
+        headers=headers,
+        data=req.content,
+        cookies=cookies,
+    )
+
+
+def response_from_flow(flow: HTTPFlow) -> Optional[HTTPResponse]:
+    resp = flow.response
+    if resp is None:
+        return None
+    headers = CaseInsensitiveDict()
+    for header, value in resp.headers.items():
+        headers[header] = value
+
+    resp = HTTPResponse(
+        body=BytesIO(resp.content),
+        headers=headers,
+        status=resp.status_code,
+        preload_content=False,
+        original_response=MockHTTPResponse(headers.items())
+    )
+    # Hack to prevent already decoded contents to be decoded again
+    resp.CONTENT_DECODERS = []
+    return resp
