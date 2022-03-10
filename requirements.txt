@@ -9,3 +9,4 @@ loguru
 mitmproxy
 python-dateutil
 numpy
+cryptography

@@ -5,7 +5,7 @@ from http.client import HTTPConnection
 from pathlib import Path
 from socket import socket
 from ssl import SSLSocket
-from typing import Union, Optional, Dict, List, Generator
+from typing import Union, Optional, Dict, List, Generator, Tuple
 
 from cryptography import x509
 from loguru import logger
@@ -186,13 +186,8 @@ class CacheAdapter(HTTPAdapter, ABC):
 
         # In active mode, check cache for a cached response
         if self._is_active:
-            if (response := self.find_response(request)) is not None:
-                logger.debug(f"{self._indent}  Cache hit")
-                self._hit = True
-                if self._delete_after_hit:
-                    self._delete(response)
+            if (response := self._get_cached_response(request)) is not None:
                 return response
-            logger.debug(f"{self._indent}  Cache miss")
         self._hit = False
 
         # In offline mode, we cannot make new HTTP requests for cache misses
@@ -213,6 +208,16 @@ class CacheAdapter(HTTPAdapter, ABC):
         else:
             self._handle_response(response)
         return response
+
+    def _get_cached_response(self, request: PreparedRequest) -> Optional[Response]:
+        if (response := self.find_response(request)) is not None:
+            logger.debug(f"{self._indent}  Cache hit")
+            self._hit = True
+            if self._delete_after_hit:
+                self._delete(response)
+            return response
+        logger.debug(f"{self._indent}  Cache miss")
+        return None
 
     def _handle_response(self, response: Response):
         if self._is_passive:  # Store received response in cache
@@ -258,7 +263,7 @@ class CacheAdapter(HTTPAdapter, ABC):
     def _store_response(self, response: Response):
         raise NotImplementedError()
 
-    def _delete(self, idx: int, response: Response):
+    def _delete(self, response: Response, **kwargs):
         raise NotImplementedError()
 
 
@@ -388,14 +393,26 @@ class MemoryCacheAdapter(CacheAdapter, ABC):
         return super(CacheAdapter, self).send(request, stream, timeout, verify, cert,
                                               proxies)
 
-    def find_response(self, request: PreparedRequest) -> Optional[Response]:
+    def _get_cached_response(self, request: PreparedRequest) -> Optional[Response]:
+        idx, response = self.find_response(request)
+        if response is not None:
+            logger.debug(f"{self._indent}  Cache hit")
+            self._hit = True
+            if self._delete_after_hit:
+                self._delete(response, idx=idx)
+            return response
+        logger.debug(f"{self._indent}  Cache miss")
+        return None
+
+    def find_response(self, request: PreparedRequest) -> Optional[Tuple[int, Response]]:
         # TODO: Find a consistent way to reintroduce the fast lookup-index
         url = parse_url(request.url)
         cached = self._entries.get(url.hostname, {}).get(url.path, [])
         for idx, response in enumerate(cached):
             if self._match_requests(request, response.request):
                 self._del_idx = idx
-                return response
+                return idx, response
+        return None, None
 
     def _match_requests(self, request: PreparedRequest,
                         cached_request: PreparedRequest) -> bool:
@@ -451,11 +468,12 @@ class MemoryCacheAdapter(CacheAdapter, ABC):
         origin[url.path] = responses
         self._entries[url.hostname] = origin
 
-    def _delete(self, response: Response):
+    def _delete(self, response: Response, **kwargs):
         url = parse_url(response.request.url)
         cached = self._entries.get(url.hostname, {}).get(url.path, [])
-        if 0 <= self._del_idx < len(cached):
-            del cached[self._del_idx]
+        idx = kwargs.get('idx', -1)
+        if 0 <= idx < len(cached):
+            del cached[idx]
             logger.debug("Removed response from cache")
         else:
             logger.warning(

@@ -4,8 +4,5 @@ recursive-exclude .idea *
 recursive-exclude .cache *
 recursive-exclude spoofbot.egg-info *
 exclude .gitignore
-exclude setup.py
-exclude setup.cfg
-exclude pyproject.toml
 exclude README.md
 exclude MANIFEST.in

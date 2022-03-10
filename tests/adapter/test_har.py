@@ -2,6 +2,7 @@ import unittest
 
 from requests import Session
 
+from adapter import p
 from spoofbot.adapter import HarCache
 
 
