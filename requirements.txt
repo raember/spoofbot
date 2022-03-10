@@ -6,7 +6,6 @@ toposort
 brotli
 publicsuffix2
 loguru
-mitmproxy
 python-dateutil
 numpy
 cryptography

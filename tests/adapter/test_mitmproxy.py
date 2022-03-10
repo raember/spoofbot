@@ -3,7 +3,7 @@ import unittest
 from requests import Session
 
 from adapter import p
-from spoofbot.adapter import MitmProxyCache
+from spoofbot.adapter.mitmproxy import MitmProxyCache
 from spoofbot.util import load_flows
 
 

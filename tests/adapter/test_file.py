@@ -5,7 +5,7 @@ from pathlib import Path
 from requests import Session
 from urllib3.util import parse_url
 
-from spoofbot.adapter import FileCache
+from spoofbot.adapter.file import FileCache
 from spoofbot.util import to_filepath
 
 logging.basicConfig(level=logging.DEBUG)

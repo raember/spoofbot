@@ -20,7 +20,7 @@ from requests.structures import CaseInsensitiveDict
 from requests.utils import requote_uri, rewind_body, get_netrc_auth
 from urllib3.util.url import parse_url, Url
 
-from spoofbot.adapter import FileCache
+from spoofbot.adapter.file import FileCache
 from spoofbot.operating_system import Windows, random_os, OS
 from spoofbot.tag import MimeTypeTag, LanguageTag
 from spoofbot.util import ReferrerPolicy, are_same_origin, are_same_site, sort_dict, \

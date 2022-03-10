@@ -13,7 +13,7 @@ from requests import Response
 
 from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux, \
     MacOSXVersion, WindowsVersion
-from spoofbot.adapter import HarCache
+from spoofbot.adapter.har import HarCache
 from spoofbot.util import encode_form_data, TimelessRequestsCookieJar
 
 logging.basicConfig(level=logging.DEBUG)

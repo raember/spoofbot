@@ -3,7 +3,7 @@ import unittest
 from requests import Session
 
 from adapter import p
-from spoofbot.adapter import HarCache
+from spoofbot.adapter.har import HarCache
 
 
 class HarProxyTest(unittest.TestCase):
