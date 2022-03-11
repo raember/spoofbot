@@ -5,10 +5,11 @@ Supports Firefox and Chrome browser on most generic Windows, MacOS and Linux spo
 ## Example usage
 ```py
 from spoofbot.browser import Chrome
-from spoofbot.adapter import FileCache
+from spoofbot.adapter.file import FileCache
 
 browser = Chrome()
-browser.adapter = FileCache()
+adapter = FileCache()
+adapter.prepare_session(browser)
 
 browser.navigate('https://httpbin.org/')
 spec = browser.get('https://httpbin.org/spec.json').json()

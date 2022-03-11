@@ -198,6 +198,7 @@ class CacheAdapter(HTTPAdapter, ABC):
         # noinspection PyTypeChecker
         response: Response = None
         try:
+            stream = True  # to keep the socket as to be able to get peer ip and port
             response = self._send(request, stream, timeout, verify, cert, proxies)
         except RequestException as ex:
             # In case the request fails, we still might want to save it
@@ -261,7 +262,24 @@ class CacheAdapter(HTTPAdapter, ABC):
             f"Could not find cached request for [{request.method}] {request.url}")
 
     def _store_response(self, response: Response):
-        raise NotImplementedError()
+        setattr(response, 'timestamp', self._timestamp)
+        conn: HTTPConnection = getattr(response.raw, '_connection', None)
+        if conn is not None and not getattr(conn.sock, '_closed'):
+            sock: socket = conn.sock
+            if isinstance(sock, SSLSocket):
+                # Save ssl certificate info
+                cert: dict = sock.getpeercert()
+                setattr(response, 'cert', cert)
+                cert_bin: bytes = sock.getpeercert(binary_form=True)
+                setattr(response, 'cert_bin', cert_bin)
+                x509cert = x509.load_der_x509_certificate(cert_bin)
+                setattr(response, 'cert_x509', x509cert)
+            ip, port = sock.getpeername()
+            # Save connection info
+            setattr(response, 'ip', ip)
+            setattr(response, 'port', port)
+            conn.sock.close()
+            setattr(response.raw, '_connection', None)
 
     def _delete(self, response: Response, **kwargs):
         raise NotImplementedError()
@@ -386,13 +404,6 @@ class MemoryCacheAdapter(CacheAdapter, ABC):
                 for req in reqs:
                     yield req
 
-    def _send(self, request: PreparedRequest, stream=False, timeout=None, verify=True,
-              cert=None,
-              proxies=None) -> Response:
-        stream = True  # to keep the socket as to be able to get peer ip and port
-        return super(CacheAdapter, self).send(request, stream, timeout, verify, cert,
-                                              proxies)
-
     def _get_cached_response(self, request: PreparedRequest) -> Optional[Response]:
         idx, response = self.find_response(request)
         if response is not None:
@@ -445,22 +456,7 @@ class MemoryCacheAdapter(CacheAdapter, ABC):
         return False
 
     def _store_response(self, response: Response):
-        setattr(response, 'timestamp', self._timestamp)
-        conn: HTTPConnection = getattr(response.raw, '_connection', None)
-        if conn is not None and not getattr(conn.sock, '_closed'):
-            sock: socket = conn.sock
-            if isinstance(sock, SSLSocket):
-                cert: dict = sock.getpeercert()
-                setattr(response, 'cert', cert)
-                cert_bin: bytes = sock.getpeercert(binary_form=True)
-                setattr(response, 'cert_bin', cert_bin)
-                x509cert = x509.load_der_x509_certificate(cert_bin)
-                setattr(response, 'cert_x509', x509cert)
-            ip, port = sock.getpeername()
-            setattr(response, 'ip', ip)
-            setattr(response, 'port', port)
-            conn.sock.close()
-            setattr(response.raw, '_connection', None)
+        super(MemoryCacheAdapter, self)._store_response(response)
         url = parse_url(response.request.url)
         origin = self._entries.get(url.hostname, {})
         responses = origin.get(url.path, [])
