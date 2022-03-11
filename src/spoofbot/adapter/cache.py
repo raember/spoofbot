@@ -3,6 +3,7 @@ from abc import ABC
 from datetime import datetime
 from http.client import HTTPConnection
 from pathlib import Path
+import socket as skt
 from socket import socket
 from ssl import SSLSocket
 from typing import Union, Optional, Dict, List, Generator, Tuple
@@ -230,10 +231,7 @@ class CacheAdapter(HTTPAdapter, ABC):
         self._timestamp = datetime.now().astimezone()
 
     def _post_send(self, response: Response):
-        conn = getattr(response.raw, '_connection')
-        if conn is not None and not getattr(conn.sock, '_closed'):
-            conn.sock.close()
-            setattr(response.raw, '_connection', None)
+        pass
 
     def _send(self, request: PreparedRequest, stream=False, timeout=None, verify=True,
               cert=None, proxies=None) -> Response:
@@ -263,9 +261,9 @@ class CacheAdapter(HTTPAdapter, ABC):
 
     def _store_response(self, response: Response):
         setattr(response, 'timestamp', self._timestamp)
-        conn: HTTPConnection = getattr(response.raw, '_connection', None)
-        if conn is not None and not getattr(conn.sock, '_closed'):
-            sock: socket = conn.sock
+        sock: socket = skt.fromfd(response.raw.fileno(), skt.AF_INET, skt.SOCK_STREAM)
+        setattr(response.raw, 'sock', sock)
+        if sock is not None and not getattr(sock, '_closed'):
             if isinstance(sock, SSLSocket):
                 # Save ssl certificate info
                 cert: dict = sock.getpeercert()
@@ -278,8 +276,7 @@ class CacheAdapter(HTTPAdapter, ABC):
             # Save connection info
             setattr(response, 'ip', ip)
             setattr(response, 'port', port)
-            conn.sock.close()
-            setattr(response.raw, '_connection', None)
+            sock.close()
 
     def _delete(self, response: Response, **kwargs):
         raise NotImplementedError()
