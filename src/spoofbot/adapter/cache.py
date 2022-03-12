@@ -1,9 +1,8 @@
 import os
-import socket as skt
+import socket
 from abc import ABC
 from datetime import datetime
 from pathlib import Path
-from socket import socket
 from ssl import SSLSocket
 from typing import Union, Optional, Dict, List, Generator, Tuple
 
@@ -264,7 +263,7 @@ class CacheAdapter(HTTPAdapter, ABC):
 
     def _prepare_response(self, response: Response):
         setattr(response, 'timestamp', self._timestamp)
-        sock: socket = skt.fromfd(response.raw.fileno(), skt.AF_INET, skt.SOCK_STREAM)
+        sock: socket.socket = socket.fromfd(response.raw.fileno(), socket.AF_INET, socket.SOCK_STREAM)
         setattr(response.raw, 'sock', sock)
         if sock is not None and not getattr(sock, '_closed'):
             if isinstance(sock, SSLSocket):
