@@ -1,9 +1,8 @@
 import os
+import socket as skt
 from abc import ABC
 from datetime import datetime
-from http.client import HTTPConnection
 from pathlib import Path
-import socket as skt
 from socket import socket
 from ssl import SSLSocket
 from typing import Union, Optional, Dict, List, Generator, Tuple
@@ -223,6 +222,7 @@ class CacheAdapter(HTTPAdapter, ABC):
 
     def _handle_response(self, response: Response):
         if self._is_passive:  # Store received response in cache
+            self._prepare_response(response)
             self._store_response(response)
             logger.debug(f"{self._indent}  Saved response in cache")
         self._post_send(response)
@@ -260,6 +260,9 @@ class CacheAdapter(HTTPAdapter, ABC):
             f"Could not find cached request for [{request.method}] {request.url}")
 
     def _store_response(self, response: Response):
+        raise NotImplementedError()
+
+    def _prepare_response(self, response: Response):
         setattr(response, 'timestamp', self._timestamp)
         sock: socket = skt.fromfd(response.raw.fileno(), skt.AF_INET, skt.SOCK_STREAM)
         setattr(response.raw, 'sock', sock)
@@ -453,7 +456,6 @@ class MemoryCacheAdapter(CacheAdapter, ABC):
         return False
 
     def _store_response(self, response: Response):
-        super(MemoryCacheAdapter, self)._store_response(response)
         url = parse_url(response.request.url)
         origin = self._entries.get(url.hostname, {})
         responses = origin.get(url.path, [])
