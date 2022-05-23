@@ -264,7 +264,12 @@ class CacheAdapter(HTTPAdapter, ABC):
 
     def _prepare_response(self, response: Response):
         setattr(response, 'timestamp', self._timestamp)
-        sock: socket = skt.fromfd(response.raw.fileno(), skt.AF_INET, skt.SOCK_STREAM)
+        sock: socket
+        try:
+            sock = skt.fromfd(response.raw.fileno(), skt.AF_INET, skt.SOCK_STREAM)
+        except IOError as e:
+            logger.debug(f"No response socket: {e}")
+            return
         setattr(response.raw, 'sock', sock)
         if sock is not None and not getattr(sock, '_closed'):
             if isinstance(sock, SSLSocket):
