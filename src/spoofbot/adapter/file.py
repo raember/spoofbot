@@ -173,6 +173,7 @@ class FileCache(CacheAdapter):
             redirect_url = parse_url(redirect)
             target = to_filepath(redirect_url, self._cache_path, self._ignore_queries)
             symlink_path = get_symlink_path(self._filepath, target, self._cache_path)
+            self._filepath.unlink(missing_ok=True)
             self._filepath.symlink_to(symlink_path)
             logger.debug(f"{self._indent}  Symlinked redirection to target.")
         else:
