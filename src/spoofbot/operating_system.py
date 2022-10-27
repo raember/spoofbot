@@ -1,7 +1,7 @@
 from abc import ABC
 from enum import Enum
 
-from numpy.random import choice
+from spoofbot.util.common import choice
 
 
 class OS(ABC):
