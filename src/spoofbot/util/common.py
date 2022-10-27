@@ -1,4 +1,5 @@
 """Common and random utilities that can be useful"""
+import random
 import time
 from datetime import datetime
 # noinspection PyUnresolvedReferences,PyProtectedMember
@@ -247,3 +248,18 @@ class TimelessRequestsCookieJar(RequestsCookieJar, CookieJar):
             self._cookies_lock.release()
 
         self.clear_expired_cookies()
+
+
+def choice(candidates: list, p: list[float] = None):
+    if p is None:
+        p = [1.0 for _ in candidates]
+    s = sum(p)
+    if s != 1.0:
+        p = [prob / s for prob in p]
+
+    r = random.random()
+    for candidate, prob in zip(candidates, p):
+        if r < prob:
+            return candidate
+        r -= prob
+    raise Exception()

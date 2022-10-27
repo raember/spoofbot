@@ -1,14 +1,13 @@
 import json
 from datetime import datetime, timezone, timedelta
 from itertools import islice
-from random import choices
-
-from dateutil.parser import parse
 from pathlib import Path
 
 import requests
+from dateutil.parser import parse
 from loguru import logger
-from numpy.random import choice
+
+from spoofbot.util.common import choice
 
 
 def _get_cache(browser: str, update_after: timedelta) -> Path:
@@ -48,6 +47,7 @@ def get_firefox_versions(update_after: timedelta = timedelta(days=1)) -> dict[da
                 versions[parse(value['date'])] = tuple(map(int, ver.split('.')))
         with open(cache, 'w') as fp:
             json.dump({str(k): v for (k, v) in versions.items()}, fp)
+    # noinspection PyTypeChecker
     return versions
 
 
@@ -64,6 +64,7 @@ def get_chrome_versions(update_after: timedelta = timedelta(days=1)) -> dict[dat
             versions[parse(value['serving']['startTime'])] = tuple(map(int, value['version'].split('.')))
         with open(cache, 'w') as fp:
             json.dump({str(k): v for (k, v) in versions.items()}, fp)
+    # noinspection PyTypeChecker
     return versions
 
 
