@@ -1,8 +1,7 @@
 import mimetypes
-from datetime import timedelta, datetime
+from datetime import datetime
 from enum import Enum
 from http.cookiejar import CookieJar
-from time import sleep
 from typing import List, Optional, AnyStr, TypeVar, TextIO, Tuple, Callable, Dict
 from urllib.parse import urlparse, urljoin
 
@@ -20,8 +19,10 @@ from requests.structures import CaseInsensitiveDict
 from requests.utils import requote_uri, rewind_body, get_netrc_auth
 from urllib3.util.url import parse_url, Url
 
+from spoofbot.adapter.cache import CacheAdapter
 from spoofbot.adapter.file import FileCache
 from spoofbot.operating_system import Windows, random_os, OS
+from spoofbot.scheduler import RequestScheduler, NormalRequestScheduler
 from spoofbot.tag import MimeTypeTag, LanguageTag
 from spoofbot.util import ReferrerPolicy, are_same_origin, are_same_site, sort_dict, \
     TimelessRequestsCookieJar, random_version, get_firefox_versions, get_chrome_versions
@@ -99,16 +100,16 @@ class Browser(Session):
     _connection: str
     _last_response: Response
     _last_navigate: Response
-    _last_request_timestamp: datetime
-    _request_timeout: timedelta
-    _honor_timeout: bool
-    _waiting_period: timedelta
-    _did_wait: bool
     _header_precedence: list
     _referrer_policy: ReferrerPolicy
     _adapter: BaseAdapter
+    _scheduler: RequestScheduler
 
-    def __init__(self):
+    def __init__(
+            self,
+            adapter: BaseAdapter = None,
+            scheduler: RequestScheduler = NormalRequestScheduler()
+    ):
         super(Browser, self).__init__()
         self._name = 'Spoofbot'
         from spoofbot import __version__
@@ -125,15 +126,11 @@ class Browser(Session):
         self._last_response = None
         # noinspection PyTypeChecker
         self._last_navigate = None
-        self._last_request_timestamp = datetime(1, 1, 1)
-        self._request_timeout = timedelta(seconds=1.0)
-        self._honor_timeout = True
-        self._waiting_period = timedelta(seconds=0.0)
-        self._did_wait = False
         self._header_precedence = []
         self._referrer_policy = ReferrerPolicy.NO_REFERRER_WHEN_DOWNGRADE
         # noinspection PyTypeChecker
-        self._adapter = self.get_adapter('https://')
+        self._adapter = self.get_adapter('https://') if adapter is None else adapter
+        self._scheduler = scheduler
 
     @property
     def name(self) -> str:
@@ -246,44 +243,20 @@ class Browser(Session):
         return self._last_navigate
 
     @property
-    def last_request_timestamp(self) -> datetime:
-        return self._last_request_timestamp
-
-    @last_request_timestamp.setter
-    def last_request_timestamp(self, value: datetime):
-        self._last_request_timestamp = value
-
-    @property
-    def request_timeout(self) -> timedelta:
-        return self._request_timeout
-
-    @request_timeout.setter
-    def request_timeout(self, value: timedelta):
-        self._request_timeout = value
-
-    @property
-    def honor_timeout(self) -> bool:
-        return self._honor_timeout
-
-    @honor_timeout.setter
-    def honor_timeout(self, value: bool):
-        self._honor_timeout = value
-
-    @property
-    def waiting_period(self) -> timedelta:
-        return self._waiting_period
-
-    @property
-    def did_wait(self) -> bool:
-        return self._did_wait
-
-    @property
     def header_precedence(self) -> list:
         return self._header_precedence
 
     @header_precedence.setter
     def header_precedence(self, value: list):
         self._header_precedence = value
+
+    @property
+    def scheduler(self) -> RequestScheduler:
+        return self._scheduler
+
+    @scheduler.setter
+    def scheduler(self, value: RequestScheduler):
+        self._scheduler = value
 
     @staticmethod
     def create_user_agent(**kwargs) -> str:
@@ -320,7 +293,7 @@ class Browser(Session):
 
     @staticmethod
     def _get_host(url: Url) -> str:
-        if url.port:
+        if hasattr(url, 'port'):
             return f"{url.hostname}:{url.port}"
         return url.hostname
 
@@ -328,7 +301,7 @@ class Browser(Session):
         return self._user_agent
 
     def _get_accept(self, url: Url) -> str:
-        mime_type, _ = mimetypes.guess_type(url.path if url.path is not None else '')
+        mime_type, _ = mimetypes.guess_type(url.path if hasattr(url, 'path') else '')
         if mime_type is not None:
             return mime_type
         return ','.join(map(str, self._accept))
@@ -337,12 +310,13 @@ class Browser(Session):
         return ','.join(map(str, self._accept_language))
 
     def _get_accept_encoding(self, url: Url) -> str:
-        _, enc = mimetypes.guess_type(url.path if url.path is not None else '')
+        _, enc = mimetypes.guess_type(url.path if hasattr(url, 'path') else '')
         if enc is not None:
             return enc
         encodings = self._accept_encoding.copy()
-        if url.scheme != 'https' and 'br' in encodings:
-            encodings.remove('br')
+        if hasattr(url, 'scheme'):
+            if url.scheme != 'https' and 'br' in encodings:
+                encodings.remove('br')
         return ', '.join(encodings)
 
     def _get_connection(self) -> Optional[str]:
@@ -358,7 +332,7 @@ class Browser(Session):
             return '1'
 
     def _get_te(self, url: Url) -> Optional[str]:
-        if url.scheme == 'https' and self._te != '':
+        if getattr(url, 'scheme') == 'https' and self._te != '':
             return self._te
 
     @staticmethod
@@ -400,19 +374,32 @@ class Browser(Session):
         # noinspection PyTypeChecker
         return site.value
 
-    def navigate(self, url: str, **kwargs) -> list[Response]:
+    def navigate(
+            self,
+            url: str,
+            request_attachments: bool = True,
+            attachments_from_cache: bool = True,
+            **kwargs
+    ) -> list[Response]:
         """Sends a GET request to the url and sets it into the Referer header in
         subsequent requests
 
         :param url: The url the browser is supposed to connect to
+        :param request_attachments: Whether to download attachments as well (default: True)
+        :param attachments_from_cache: Whether to allow for cached attachments
         :param kwargs: Additional arguments to forward to the requests module
-        :returns: The response to the sent request
+        :returns: A list of responses to the request sent
         :rtype: Response
         """
         kwargs.setdefault('user_activation', True)
         response = self.get(url, **kwargs)
         self._last_navigate = response
-        return self._request_attachments(response)
+        if request_attachments:
+            if isinstance(self._adapter, CacheAdapter) and attachments_from_cache:
+                with self._adapter.use_mode(active=True):
+                    return self._request_attachments(response)
+            return self._request_attachments(response)
+        return [response]
 
     def _request_attachments(self, response: Response) -> list[Response]:
         response.raise_for_status()
@@ -421,7 +408,7 @@ class Browser(Session):
         url = parse_url(response.url)
         links = self._gather_valid_links(bs, url) + \
                 self._gather_valid_scripts(bs, url) + \
-                self._gather_valid_imgs(bs, url)
+                self._gather_valid_images(bs, url)
         for link in links:
             logger.debug(f"Fetching {link.url}")
             try:
@@ -452,7 +439,10 @@ class Browser(Session):
             if href is None:
                 continue
             if href.startswith('/'):
-                href = f"{origin.scheme}://{origin.hostname}{href}"
+                if hasattr(origin, 'scheme'):
+                    href = f"{origin.scheme}://{origin.hostname}{href}"
+                else:
+                    href = f"//{origin.hostname}{href}"
             links.append(parse_url(href))
         return links
 
@@ -466,12 +456,15 @@ class Browser(Session):
             if src is None:
                 continue
             if src.startswith('/'):
-                src = f"{origin.scheme}://{origin.hostname}{src}"
+                if hasattr(origin, 'scheme'):
+                    src = f"{origin.scheme}://{origin.hostname}{src}"
+                else:
+                    src = f"//{origin.hostname}{src}"
             scripts.append(parse_url(src))
         return scripts
 
     @staticmethod
-    def _gather_valid_imgs(bs: BeautifulSoup, origin: Url) -> list[Url]:
+    def _gather_valid_images(bs: BeautifulSoup, origin: Url) -> list[Url]:
         scripts = []
         for script in bs.find_all('img'):
             if 'src' not in script.attrs:
@@ -480,7 +473,10 @@ class Browser(Session):
             if src is None:
                 continue
             if src.startswith('/'):
-                src = f"{origin.scheme}://{origin.hostname}{src}"
+                if hasattr(origin, 'scheme'):
+                    src = f"{origin.scheme}://{origin.hostname}{src}"
+                else:
+                    src = f"//{origin.hostname}{src}"
             scripts.append(parse_url(src))
         return scripts
 
@@ -566,7 +562,7 @@ class Browser(Session):
         )
 
         # Await the request timeout
-        self.await_timeout(parse_url(prep.url))
+        self._scheduler.wait(ignore=self._ignore_timeout(parse_url(prep.url)))
 
         # Send the request.
         send_kwargs = {
@@ -577,9 +573,8 @@ class Browser(Session):
         req_timestamp = datetime.now()
         response = self.send(prep, **send_kwargs)
 
-        adapter = self.adapter
-        if isinstance(adapter, FileCache) and not adapter.hit:
-            self._last_request_timestamp = req_timestamp
+        if isinstance(self._adapter, FileCache) and not self._adapter.hit:
+            self._scheduler.reset_timeout(req_timestamp)
         self._last_response = response
         log_response(response)
         return response
@@ -815,27 +810,8 @@ class Browser(Session):
             'TE': self._get_te(url),
         }.items())))
 
-    def await_timeout(self, url: Url = None):
-        """Waits until the request timeout expires.
-
-        The delay will be omitted if the last request was a hit in the cache.
-        Gets called automatically on every request.
-        """
-        if not self._honor_timeout:
-            return
-        time_passed = datetime.now() - self._last_request_timestamp
-        if time_passed < self._request_timeout:
-            adapter = self.adapter
-            if url is not None and isinstance(adapter, FileCache) and adapter.is_hit(
-                    url) and adapter.is_active:
-                logger.debug("Request will be a hit in cache. No need to wait.")
-                return
-            time_to_wait = self._request_timeout - time_passed
-            logger.debug(f"Waiting for {time_to_wait.total_seconds()} seconds.")
-            sleep(time_to_wait.total_seconds())
-            self._did_wait = True
-            return
-        self._did_wait = False
+    def _ignore_timeout(self, url: Url) -> bool:
+        return isinstance(self._adapter, FileCache) and self._adapter.is_hit(url) and self._adapter.is_active
 
     def _adapt_redirection(self, request: PreparedRequest):
         pass
@@ -1000,7 +976,7 @@ class Chrome(Browser):
         headers = super(Chrome, self)._get_default_headers(method, url, user_activation)
         if adjust_accept_encoding:
             self._accept_encoding = ['gzip', 'deflate', 'br']
-        if url.scheme == 'https':
+        if getattr(url, 'scheme') == 'https':
             headers['Sec-Fetch-Site'] = self._get_sec_fetch_site(url)
             headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(method, url)
         return headers
