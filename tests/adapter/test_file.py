@@ -1,6 +1,8 @@
 import logging
+import shutil
 import unittest
 from pathlib import Path
+from typing import Tuple
 
 from requests import Session
 from urllib3.util import parse_url
@@ -18,31 +20,46 @@ HTTPBIN_ANYTHING = parse_url('https://httpbin.org/anything')
 HTTPBIN_ANYTHING2 = parse_url('https://httpbin.org/anything2')
 HTTPBIN_HEADERS = parse_url('https://httpbin.org/headers')
 
-p = Path(__file__).parent.parent.parent
+
+def prepare_cache(use: str) -> Tuple[Session, FileCache]:
+    d = Path(__file__).parent / f".cache_{use}"
+    if d.is_dir():
+        shutil.rmtree(d)
+    fc = FileCache(d)
+    s = Session()
+    s.mount('http://', fc)
+    s.mount('https://', fc)
+    return s, fc
 
 
-class CacheAdapterTest(unittest.TestCase):
+class FileCacheTest(unittest.TestCase):
     cache_adapter: FileCache = None
     session: Session = None
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.cache_adapter = FileCache(p / 'tests/adapter/.cache')
-        cls.session = Session()
-        cls.session.mount('http://', cls.cache_adapter)
-        cls.session.mount('https://', cls.cache_adapter)
+        cls.session, cls.cache_adapter = prepare_cache('file_cache_test')
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.cache_adapter.cache_path)
 
     def test_request_hit(self):
+        # Preparation
         self.cache_adapter.is_active = True
         self.cache_adapter.is_passive = True
         self.cache_adapter.is_offline = False
+        self.cache_adapter.delete(DUCKDUCKGO_NO_REDIRECT)
+
+        self.assertIsNotNone(self.session.get(DUCKDUCKGO_NO_REDIRECT))
+        self.assertFalse(self.cache_adapter.hit)
 
         # If we request the same url twice, the second time is bound to be a hit
-        self.assertIsNotNone(self.session.get(DUCKDUCKGO_NO_REDIRECT))
         self.assertIsNotNone(self.session.get(DUCKDUCKGO_NO_REDIRECT))
         self.assertTrue(self.cache_adapter.hit)
 
     def test_request_miss(self):
+        # Preparation
         self.cache_adapter.is_active = True
         self.cache_adapter.is_passive = True
         self.cache_adapter.is_offline = False
