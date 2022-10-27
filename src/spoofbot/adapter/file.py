@@ -159,8 +159,10 @@ class FileCache(CacheAdapter):
                 # Store received response in cache
                 if self._backup is not None:
                     self._backup.backup_request(response.request, self._filepath)
-            self._store_response(response)
-            logger.debug(f"{self._indent}  Saved response in cache")
+                self._store_response(response)
+                logger.debug(f"{self._indent}  Saved response in cache")
+            else:
+                logger.debug(f"{self._indent}  Did not save response in cache because the status code was not accepted")
         self._post_send(response)
 
     def _store_response(self, response: Response):
@@ -172,13 +174,15 @@ class FileCache(CacheAdapter):
                 redirect = parse_url(response.url).host + redirect
             redirect_url = parse_url(redirect)
             target = to_filepath(redirect_url, self._cache_path, self._ignore_queries)
-            symlink_path = get_symlink_path(self._filepath, target, self._cache_path)
-            self._filepath.unlink(missing_ok=True)
-            self._filepath.symlink_to(symlink_path)
-            logger.debug(f"{self._indent}  Symlinked redirection to target.")
-        else:
-            if self._save(response.content, self._filepath):
-                logger.debug(f"{self._indent}  Saved response in cache.")
+            if target != self._filepath:
+                # Redirect is not cyclic: Proceed to set a symlink, otherwise save response normally
+                symlink_path = get_symlink_path(self._filepath, target, self._cache_path)
+                self._filepath.unlink(missing_ok=True)
+                self._filepath.symlink_to(symlink_path)
+                logger.debug(f"{self._indent}  Symlinked redirection to target.")
+                return
+        if self._save(response.content, self._filepath):
+            logger.debug(f"{self._indent}  Saved response in cache.")
 
     def _save(self, content: bytes, path: Path) -> bool:
         try:
@@ -198,10 +202,10 @@ class FileCache(CacheAdapter):
         """
         self._filepath = to_filepath(url, self._cache_path, self._ignore_queries)
         # noinspection PyTypeChecker
-        self._delete(None)
+        self._delete(None, )
         self._filepath = None
 
-    def _delete(self, response: Response):
+    def _delete(self, response: Response, **kwargs):
         if self._filepath.exists():
             self._filepath.unlink()
             logger.debug("Deleted response.")
