@@ -279,7 +279,11 @@ class CacheAdapter(HTTPAdapter, ABC):
                 setattr(response, 'cert_bin', cert_bin)
                 x509cert = x509.load_der_x509_certificate(cert_bin)
                 setattr(response, 'cert_x509', x509cert)
-            ip, port = sock.getpeername()
+            peer = sock.getpeername()
+            if len(peer) == 4:
+                ip, port, _, _ = peer
+            else:
+                ip, port = peer
             # Save connection info
             setattr(response, 'ip', ip)
             setattr(response, 'port', port)
@@ -298,6 +302,11 @@ class Mode:
 
     def __init__(self, cache: CacheAdapter, active: bool = None, passive: bool = None,
                  offline: bool = None):
+        if not isinstance(cache, CacheAdapter):
+            logger.warning("Adapter is not a CacheAdapter - mode cannot be changed")
+            active = None
+            passive = None
+            offline = None
         self._cache = cache
         self._old_active = self._cache.is_active
         if active is not None:
@@ -419,7 +428,7 @@ class MemoryCacheAdapter(CacheAdapter, ABC):
         logger.debug(f"{self._indent}  Cache miss")
         return None
 
-    def find_response(self, request: PreparedRequest) -> Optional[Tuple[int, Response]]:
+    def find_response(self, request: PreparedRequest) -> Tuple[Optional[int], Optional[Response]]:
         # TODO: Find a consistent way to reintroduce the fast lookup-index
         url = parse_url(request.url)
         cached = self._entries.get(url.hostname, {}).get(url.path, [])

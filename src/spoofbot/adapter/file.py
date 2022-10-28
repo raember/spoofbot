@@ -1,5 +1,6 @@
 import errno
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Union, Optional
 
@@ -17,7 +18,7 @@ class FileCache(CacheAdapter):
     _filepath: Optional[Path]
     _cache_on_status: set[int]
     _ignore_queries: set[str]
-    _backup: Optional['Backup']
+    _backups: list['Backup']
 
     def __init__(
             self,
@@ -59,7 +60,7 @@ class FileCache(CacheAdapter):
         self._filepath = None
         self._cache_on_status = cache_on_status
         self._ignore_queries = ignore_queries
-        self._backup = None
+        self._backups = []
 
     @property
     def cache_on_status(self) -> set[int]:
@@ -101,12 +102,12 @@ class FileCache(CacheAdapter):
         self._ignore_queries = params
 
     @property
-    def backup_data(self) -> Optional['Backup']:
-        return self._backup
+    def backup_data(self) -> list['Backup']:
+        return self._backups
 
     @property
     def is_backing_up(self) -> bool:
-        return self._backup is not None
+        return len(self._backups) > 0
 
     def is_hit(self, url: Union[Url, str]) -> bool:
         """
@@ -157,8 +158,8 @@ class FileCache(CacheAdapter):
         if self._is_passive:  # Store received response in cache
             if response.status_code in self._cache_on_status:
                 # Store received response in cache
-                if self._backup is not None:
-                    self._backup.backup_request(response.request, self._filepath)
+                if self.is_backing_up:
+                    self._backups[-1].backup_request(response.request, self._filepath)
                 self._store_response(response)
                 logger.debug(f"{self._indent}  Saved response in cache")
             else:
@@ -193,12 +194,12 @@ class FileCache(CacheAdapter):
             logger.error(f"{self._indent}  Failed to save content to file: {e}")
             return False
 
-    def delete(self, url: Union[str, os.PathLike]):
+    def delete(self, url: Union[Url, str, os.PathLike]):
         """
         Delete a cached response from the cache.
 
         :param url: The url from which the response was received
-        :type url: Union[str, PathLike]
+        :type url: Union[Url, str, PathLike]
         """
         self._filepath = to_filepath(url, self._cache_path, self._ignore_queries)
         # noinspection PyTypeChecker
@@ -212,13 +213,18 @@ class FileCache(CacheAdapter):
         else:
             logger.debug("No response to delete.")
 
-    def backup(self) -> 'Backup':
-        self._backup = Backup(self)
-        return self._backup
+    @contextmanager
+    def backup(self, backup: 'Backup' = None) -> 'Backup':
+        if backup is None:
+            backup = Backup(self)
+        try:
+            self._backups.append(backup)
+            yield self._backups[-1]
+        finally:
+            self.stop_backup()
 
     def stop_backup(self):
-        del self._backup
-        self._backup = None
+        self._backups.pop()
 
 
 class Backup:
@@ -227,25 +233,35 @@ class Backup:
 
     def __init__(self, cache: FileCache):
         self._cache = cache
+        if not isinstance(cache, CacheAdapter):
+            logger.warning("Adapter is not a CacheAdapter - mode cannot be changed")
+            # noinspection PyTypeChecker
+            self._cache = None
         self._requests = []
 
     def __enter__(self):
+        if self._cache is not None:
+            self._cache.backup(self)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._cache.stop_backup()
+        if self._cache is not None:
+            self._cache.stop_backup()
 
     def __del__(self):
         del self._requests
 
     def stop_backup(self):
-        self._cache.stop_backup()
+        if self._cache is not None:
+            self._cache.stop_backup()
 
     @property
     def requests(self):
         return self._requests
 
     def backup_request(self, request: PreparedRequest, filepath: Path = None):
+        if self._cache is None:
+            return
         if filepath is None:
             filepath = to_filepath(request.url, self._cache.cache_path,
                                    self._cache.ignore_queries)
@@ -257,6 +273,8 @@ class Backup:
                 self._requests.append((request, fp.read()))
 
     def restore(self, request: PreparedRequest, data: Optional[bytes]):
+        if self._cache is None:
+            return
         logger.debug("Restoring backup")
         filepath = to_filepath(request.url, self._cache.cache_path,
                                self._cache.ignore_queries)
@@ -268,6 +286,5 @@ class Backup:
                 fp.write(data)
 
     def restore_all(self):
-        for req, data in reversed(
-                self._requests):  # Reverse to rollback early backups at the end
+        for req, data in reversed(self._requests):  # Reverse to rollback early backups at the end
             self.restore(req, data)
