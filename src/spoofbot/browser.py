@@ -297,7 +297,7 @@ class Browser(Session):
 
     @staticmethod
     def _get_host(url: Url) -> str:
-        if hasattr(url, 'port'):
+        if hasattr(url, 'port') and url.port is not None:
             return f"{url.hostname}:{url.port}"
         return url.hostname
 
