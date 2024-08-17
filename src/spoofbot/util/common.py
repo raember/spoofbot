@@ -36,13 +36,14 @@ def dict_to_tuple_list(other: dict) -> List[Tuple[str, str]]:
     return d
 
 
-def dict_list_to_dict(other: List[dict], case_insensitive: bool = False) -> dict:
+def dict_list_to_dict(other: List[dict], case_insensitive: bool = False, allow_pseudo_headers: bool = False) -> dict:
     d = {}
     for kv in other:
         key = kv['name']
         if case_insensitive:
             key = header_to_snake_case(key)
-        d[key] = kv['value']
+        if allow_pseudo_headers or not key.startswith(':'):
+            d[key] = kv['value']
     return d
 
 
@@ -56,14 +57,15 @@ def dict_to_dict_list(headers: CaseInsensitiveDict) -> list[dict[str, str]]:
     return data
 
 
-def dict_list_to_tuple_list(other: List[dict], case_insensitive: bool = False) -> \
+def dict_list_to_tuple_list(other: List[dict], case_insensitive: bool = False, allow_pseudo_headers: bool = False) -> \
         List[Tuple[str, str]]:
     tuples = []
     for kv in other:
         key = kv['name']
         if case_insensitive:
             key = header_to_snake_case(key)
-        tuples.append((key, kv['value']))
+        if allow_pseudo_headers or not key.startswith(':'):
+            tuples.append((key, kv['value']))
     return tuples
 
 
