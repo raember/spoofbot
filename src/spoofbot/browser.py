@@ -19,7 +19,7 @@ from requests.structures import CaseInsensitiveDict
 from requests.utils import requote_uri, rewind_body, get_netrc_auth
 from urllib3.util.url import parse_url, Url
 
-from spoofbot.adapter.cache import CacheAdapter
+from spoofbot.adapter.cache import CacheAdapter, Mode as CacheMode
 from spoofbot.adapter.file import FileCache
 from spoofbot.operating_system import Windows, random_os, OS
 from spoofbot.scheduler import RequestScheduler, NormalRequestScheduler
@@ -530,9 +530,10 @@ class Browser(Session):
             If Tuple, ('cert', 'key') pair.
         :rtype: requests.Response
         """
+        if isinstance(url, Url):
+            url = str(url)
         cookies = cookies if cookies is not None else self.cookies
-        self.headers = self._get_default_headers(method, parse_url(url),
-                                                 user_activation)
+        self.headers = self._get_default_headers(method, parse_url(url), user_activation)
         self.headers.update(headers if headers else {})
 
         # Create the Request.
@@ -816,6 +817,10 @@ class Browser(Session):
     def _adapt_redirection(self, request: PreparedRequest):
         pass
 
+    def use_mode(self, active: bool = None, passive: bool = None, offline: bool = None) -> 'CacheMode':
+        if isinstance(self._adapter, CacheAdapter):
+            return CacheMode(self._adapter, active=active, passive=passive, offline=offline)
+        return CacheMode(None, active=active, passive=passive, offline=offline)
 
 FF_NEWEST = (90, 0)
 

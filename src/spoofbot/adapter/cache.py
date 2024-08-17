@@ -300,31 +300,33 @@ class Mode:
     _old_passive: bool
     _old_offline: bool
 
-    def __init__(self, cache: CacheAdapter, active: bool = None, passive: bool = None,
+    def __init__(self, cache: CacheAdapter | None, active: bool = None, passive: bool = None,
                  offline: bool = None):
-        if not isinstance(cache, CacheAdapter):
+        if cache is None or not isinstance(cache, CacheAdapter):
             logger.warning("Adapter is not a CacheAdapter - mode cannot be changed")
             active = None
             passive = None
             offline = None
         self._cache = cache
-        self._old_active = self._cache.is_active
-        if active is not None:
-            self._cache.is_active = active
-        self._old_passive = self._cache.is_passive
-        if passive is not None:
-            self._cache.is_passive = passive
-        self._old_offline = self._cache.is_offline
-        if offline is not None:
-            self._cache.is_offline = offline
+        if cache is not None:
+            self._old_active = self._cache.is_active
+            self._old_passive = self._cache.is_passive
+            self._old_offline = self._cache.is_offline
+            if active is not None:
+                self._cache.is_active = active
+            if passive is not None:
+                self._cache.is_passive = passive
+            if offline is not None:
+                self._cache.is_offline = offline
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._cache.is_active = self._old_active
-        self._cache.is_passive = self._old_passive
-        self._cache.is_offline = self._old_offline
+        if self._cache is not None:
+            self._cache.is_active = self._old_active
+            self._cache.is_passive = self._old_passive
+            self._cache.is_offline = self._old_offline
 
 
 class MemoryCacheAdapter(CacheAdapter, ABC):

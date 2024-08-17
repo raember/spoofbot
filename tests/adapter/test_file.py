@@ -26,15 +26,14 @@ def prepare_cache(use: str) -> Tuple[Session, FileCache]:
     if d.is_dir():
         shutil.rmtree(d)
     fc = FileCache(d)
-    s = Session()
-    s.mount('http://', fc)
-    s.mount('https://', fc)
+    s = Firefox()
+    s.adapter = fc
     return s, fc
 
 
 class FileCacheTest(unittest.TestCase):
     cache_adapter: FileCache = None
-    session: Session = None
+    session: Browser = None
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -153,6 +152,25 @@ class FileCacheTest(unittest.TestCase):
             self.assertFalse(self.cache_adapter.is_passive)
             self.assertFalse(self.cache_adapter.is_offline)
             with self.cache_adapter.use_mode(True, False, True):
+                self.assertTrue(self.cache_adapter.is_active)
+                self.assertFalse(self.cache_adapter.is_passive)
+                self.assertTrue(self.cache_adapter.is_offline)
+            self.assertTrue(self.cache_adapter.is_active)
+            self.assertFalse(self.cache_adapter.is_passive)
+            self.assertFalse(self.cache_adapter.is_offline)
+        self.assertTrue(self.cache_adapter.is_active)
+        self.assertTrue(self.cache_adapter.is_passive)
+        self.assertFalse(self.cache_adapter.is_offline)
+
+    def test_with_mode2(self):
+        self.cache_adapter.is_active = True
+        self.cache_adapter.is_passive = True
+        self.cache_adapter.is_offline = False
+        with self.session.use_mode(True, False, False):
+            self.assertTrue(self.cache_adapter.is_active)
+            self.assertFalse(self.cache_adapter.is_passive)
+            self.assertFalse(self.cache_adapter.is_offline)
+            with self.session.use_mode(True, False, True):
                 self.assertTrue(self.cache_adapter.is_active)
                 self.assertFalse(self.cache_adapter.is_passive)
                 self.assertTrue(self.cache_adapter.is_offline)
