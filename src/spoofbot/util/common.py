@@ -108,6 +108,17 @@ def query_to_dict_list(query: str) -> list[dict[str, str]]:
     return queries
 
 
+def query_to_dict(query: str) -> list[dict[str, str]]:
+    queries = {}
+    for kvp in query.split('&'):
+        if '=' in kvp:
+            k, v = kvp.split('=', 1)
+        else:
+            k, v = kvp, ''
+        queries[k] = v
+    return queries
+
+
 def url_to_query_dict_list(url: Union[Url, str]) -> list[dict[str, str]]:
     if isinstance(url, str):
         url = urlparse(url)

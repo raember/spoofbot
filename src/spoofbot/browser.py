@@ -129,7 +129,11 @@ class Browser(Session):
         self._header_precedence = []
         self._referrer_policy = ReferrerPolicy.NO_REFERRER_WHEN_DOWNGRADE
         # noinspection PyTypeChecker
-        self._adapter = self.get_adapter('https://') if adapter is None else adapter
+        if adapter is not None:
+            self.mount('https://', adapter)
+            # noinspection HttpUrlsUsage
+            self.mount('http://', adapter)
+        self._adapter = self.get_adapter('https://')
         self._scheduler = scheduler
 
     @property
