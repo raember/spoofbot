@@ -17,8 +17,9 @@ from dateutil.parser import parse
 # https://w3c.github.io/web-performance/specs/HAR/Overview.html
 from requests import PreparedRequest, Response
 from requests import Request
-from requests.adapters import HTTPAdapter, CaseInsensitiveDict, HTTPResponse
+from requests.adapters import HTTPAdapter, CaseInsensitiveDict
 from requests.cookies import RequestsCookieJar
+from urllib3 import HTTPResponse
 from urllib3.util import Url, parse_url
 
 from spoofbot.util.common import dict_to_dict_list, url_to_query_dict_list, \
