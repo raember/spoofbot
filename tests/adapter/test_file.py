@@ -7,6 +7,7 @@ from typing import Tuple
 from requests import Session
 from urllib3.util import parse_url
 
+from spoofbot import Browser, Firefox
 from spoofbot.adapter.file import FileCache
 from spoofbot.util import to_filepath
 
