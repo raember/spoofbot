@@ -7,6 +7,7 @@ from spoofbot.util.common import choice
 class OS(ABC):
     def __init__(self):
         self.comments = []
+        self.name = 'Unknown'
 
     @staticmethod
     def create_random() -> 'OS':
@@ -41,6 +42,7 @@ class Windows(OS):
         :param native: Whether the browser is 64-bit or 32-bit (default: :py:obj:`True`)
         """
         super(Windows, self).__init__()
+        self.name = 'Windows'
         self.comments.append(f"Windows NT {version.value}")
         if x64:
             if native:
@@ -96,6 +98,7 @@ class MacOSX(OS):
         :param version: The MacOS X version (default :py:const:`MacOSXVersion.Catalina`)
         """
         super(MacOSX, self).__init__()
+        self.name = 'macOS'
         self.comments.append("Macintosh")
         self.comments.append(f"Intel Mac OS X {version.value}")
 
@@ -121,6 +124,7 @@ class Linux(OS):
         :param native: Whether the browser is 64-bit or 32-bit (default: :py:obj:`True`)
         """
         super(Linux, self).__init__()
+        self.name = 'Linux'
         self.comments.append("X11")
         if derivative != LinuxDerivatives.Generic:
             self.comments.append(derivative.value)
