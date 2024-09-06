@@ -35,6 +35,9 @@ class MockHTTPResponse:
     def isclosed():
         return False
 
+    def close(self):
+        pass
+
 
 def load_response(filepath: Path) -> HTTPResponse:
     with open(filepath, 'rb') as fp:
