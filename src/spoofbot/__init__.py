@@ -1,4 +1,4 @@
-"""Core modules for tht web bot"""
+"""Core modules for the web bot"""
 
 # noinspection PyUnresolvedReferences
 from .browser import Browser, Firefox, Chrome, MimeTypeTag, LanguageTag
@@ -6,4 +6,4 @@ from .browser import Browser, Firefox, Chrome, MimeTypeTag, LanguageTag
 from .operating_system import OS, Windows, WindowsVersion, MacOSX, MacOSXVersion, \
     Linux, LinuxDerivatives
 
-__version__ = '1.3.6'
+__version__ = '1.4.0'
