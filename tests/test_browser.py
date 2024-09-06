@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 from requests import Response
 
+from common import HttpBinTestCase
 from spoofbot import Firefox, Chrome, MimeTypeTag, Windows, MacOSX, Linux, \
     MacOSXVersion, WindowsVersion
 from spoofbot.adapter.har import HarCache
@@ -820,6 +821,15 @@ class ChromeUserAgentTest(unittest.TestCase):
             Chrome.create_user_agent(version=(79, 0, 3945, 130),
                                      webkit_version=(536, 5))
         )
+
+
+class ChromeBrowserTest(HttpBinTestCase):
+    def setUp(self):
+        self.browser = Chrome()
+
+    def test_get_anything(self):
+        resp = self.browser.navigate(self.get_httbin_url('/anything'))[0]
+        self.assertEqual(resp.status_code, 200)
 
 
 if __name__ == '__main__':
