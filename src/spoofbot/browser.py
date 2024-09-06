@@ -84,12 +84,29 @@ StrOrBool = TypeVar('StrOrBool', str, bool)
 StrOrStrTuple = TypeVar('StrOrStrTuple', str, Tuple[str, str])
 
 
+class WithScheduler:
+    _browser: 'Browser'
+    _old_scheduler: RequestScheduler
+
+    def __init__(self, browser: 'Browser', scheduler: RequestScheduler):
+        self._browser = browser
+        self._old_scheduler = browser.scheduler
+        self._browser.scheduler = scheduler
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._browser.scheduler = self._old_scheduler
+
+
 class Browser(Session):
     """Basic browser session
 
     Specific browsers must inherit from this class and overwrite the abstract methods
     """
 
+    _os: OS
     _user_agent: str
     _accept: List[MimeTypeTag]
     _accept_language: List[LanguageTag]
@@ -107,10 +124,12 @@ class Browser(Session):
 
     def __init__(
             self,
+            os: OS,
             adapter: BaseAdapter = None,
-            scheduler: RequestScheduler = NormalRequestScheduler()
+            scheduler: RequestScheduler = NormalRequestScheduler(),
     ):
         super(Browser, self).__init__()
+        self._os = os
         self._name = 'Spoofbot'
         from spoofbot import __version__
         self._version = __version__
@@ -261,6 +280,9 @@ class Browser(Session):
     @scheduler.setter
     def scheduler(self, value: RequestScheduler):
         self._scheduler = value
+
+    def use_scheduler(self, scheduler: RequestScheduler) -> WithScheduler:
+        return WithScheduler(self, scheduler)
 
     @staticmethod
     def create_user_agent(**kwargs) -> str:
@@ -826,17 +848,20 @@ class Browser(Session):
             return CacheMode(self._adapter, active=active, passive=passive, offline=offline)
         return CacheMode(None, active=active, passive=passive, offline=offline)
 
-FF_NEWEST = (90, 0)
+
+FF_NEWEST = (129, 0)
 
 
 class Firefox(Browser):
     def __init__(self,
-                 os=Windows(),
+                 os: OS = Windows(),
+                 adapter: BaseAdapter = None,
+                 scheduler: RequestScheduler = NormalRequestScheduler(),
                  ff_version=FF_NEWEST,
                  build_id=20100101,
                  do_not_track=False,
                  upgrade_insecure_requests=True):
-        super(Firefox, self).__init__()
+        super(Firefox, self).__init__(os=os, adapter=adapter, scheduler=scheduler)
         self._name = 'Firefox'
         self._version = '.'.join(map(str, ff_version))
         self._user_agent = self.create_user_agent(os, ff_version, build_id)
@@ -893,18 +918,20 @@ class Firefox(Browser):
         return Firefox.create_user_agent(os, ff_version)
 
 
-CHROME_NEWEST = (92, 0, 4495, 0)
+CHROME_NEWEST = (127, 0, 0, 0)
 WEBKIT_NEWEST = (537, 36)
 
 
 class Chrome(Browser):
     def __init__(self,
-                 os=Windows(),
+                 os: OS = Windows(),
+                 adapter: BaseAdapter = None,
+                 scheduler: RequestScheduler = NormalRequestScheduler(),
                  chrome_version=CHROME_NEWEST,
                  webkit_version=WEBKIT_NEWEST,
                  do_not_track=False,
                  upgrade_insecure_requests=True):
-        super(Chrome, self).__init__()
+        super(Chrome, self).__init__(os=os, adapter=adapter, scheduler=scheduler)
         self._name = 'Chrome'
         self._version = '.'.join(map(str, chrome_version))
         self._user_agent = self.create_user_agent(os=os, version=chrome_version,
@@ -913,16 +940,17 @@ class Chrome(Browser):
             MimeTypeTag("text", "html"),
             MimeTypeTag("application", "xhtml+xml"),
             MimeTypeTag("application", "xml", q=0.9),
+            MimeTypeTag("image", "avif"),
             MimeTypeTag("image", "webp"),
             MimeTypeTag("image", "apng"),
             MimeTypeTag(q=0.8),
-            MimeTypeTag("application", "signed-exchange", v='b3', q=0.9),
+            MimeTypeTag("application", "signed-exchange", v='b3', q=0.7),
         ]
         self._accept_language = [
             LanguageTag("en", "US"),
             LanguageTag("en", q=0.9)
         ]
-        self._accept_encoding = ['gzip', 'deflate', 'br']
+        self._accept_encoding = ['gzip', 'deflate', 'br', 'zstd']
         self._dnt = do_not_track
         self._upgrade_insecure_requests = upgrade_insecure_requests
         self._connection = 'keep-alive'
@@ -936,8 +964,15 @@ class Chrome(Browser):
             'Sec-Fetch-User',
             'Accept',
             'Origin',
+            'Priority',
+            'Sec-Ch-Ua',
+            'Sec-Ch-Ua-Mobile',
+            'Sec-Ch-Ua-Platform',
+            'Sec-Fetch-Dest',
+            'Sec-Fetch-Mode',
             'Sec-Fetch-Site',
             'Sec-Fetch-Mode',
+            'Sec-Fetch-User',
             'Referer',
             'Accept-Encoding',
             'Accept-Language',
@@ -981,13 +1016,18 @@ class Chrome(Browser):
                              user_activation: bool) -> CaseInsensitiveDict:
         adjust_accept_encoding = self._last_navigate is None
         if adjust_accept_encoding:
-            self._accept_encoding = ['gzip', 'deflate']
+            self._accept_encoding = ['gzip', 'deflate', 'br', 'zstd']
         headers = super(Chrome, self)._get_default_headers(method, url, user_activation)
         if adjust_accept_encoding:
             self._accept_encoding = ['gzip', 'deflate', 'br']
-        if getattr(url, 'scheme') == 'https':
-            headers['Sec-Fetch-Site'] = self._get_sec_fetch_site(url)
-            headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(method, url)
+        headers['Sec-Ch-Ua'] = f"\"Chromium\";v=\"{self._version.split('.')[0]}\", \"Not)A;Brand\";v=\"99\""
+        headers['Sec-Ch-Ua-Mobile'] = "?0"
+        headers['Sec-Ch-Ua-Platform'] = f'"{self._os.name}"'
+        # if getattr(url, 'scheme') == 'https':
+        headers['Sec-Fetch-Dest'] = 'document'
+        headers['Sec-Fetch-Site'] = self._get_sec_fetch_site(url)
+        headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(method, url)
+        headers['Sec-Fetch-User'] = '?1'
         return headers
 
     def _adapt_redirection(self, request: PreparedRequest):
@@ -1005,5 +1045,4 @@ class Chrome(Browser):
             else:
                 request.headers['Sec-Fetch-Mode'] = self._get_sec_fetch_mode(
                     request.method, url)
-        request.headers = CaseInsensitiveDict(
-            sort_dict(dict(request.headers), self._header_precedence))
+        request.headers = CaseInsensitiveDict(sort_dict(dict(request.headers), self._header_precedence))
