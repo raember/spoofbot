@@ -110,7 +110,7 @@ def query_to_dict_list(query: str) -> list[dict[str, str]]:
     return queries
 
 
-def query_to_dict(query: str) -> list[dict[str, str]]:
+def query_to_dict(query: str) -> dict[str, str]:
     queries = {}
     for kvp in query.split('&'):
         if '=' in kvp:
